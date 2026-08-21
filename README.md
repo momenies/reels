@@ -64,6 +64,24 @@ and pull request.
 
 ## Run
 
+### As a web UI
+
+```bash
+pip install -r requirements-web.txt
+python -m web.app                  # http://127.0.0.1:8000
+```
+
+Drop a video in, watch the pipeline's own output stream as it works, play the
+clips in the page and download the ones you want. It calls the same
+`pipeline.run.process()` the CLI does, one job at a time — a single render
+already saturates the CPU, so a second job in parallel only makes both slower.
+
+It binds to localhost and trusts whoever is at the keyboard. Don't expose it
+to a network you don't control: it accepts uploads and spends money on the
+Claude call for each one.
+
+### As a CLI
+
 ```bash
 python -m pipeline.run input.mp4 --lang ar --clips 5 --out out/
 ```
@@ -82,7 +100,7 @@ caption styling costs seconds, not minutes.
 
 ## Verified
 
-`python smoke.py` — 12/12 checks, ffmpeg 6.1.1 with libass:
+`python smoke.py` — 13/13 checks, ffmpeg 6.1.1 with libass:
 
 - Dynamic crop via `sendcmd` retargets mid-clip without re-encoding twice ✓
 - Latin word-level highlight (active word amber + scaled) ✓
@@ -91,6 +109,7 @@ caption styling costs seconds, not minutes.
 - Crop offsets even, in bounds, timestamps strictly increasing ✓
 - Crop holds while the subject is still and follows when they move ✓
 - No faces falls back to a centred crop ✓
+- A cut past the end of the source raises instead of writing an empty clip ✓
 - A missing font raises `MissingFontError` instead of rendering blank ✓
 
 Beyond the smoke test, on real footage:
@@ -105,6 +124,8 @@ Beyond the smoke test, on real footage:
   into `Segment`/`Word` survives the shapes faster-whisper actually emits —
   `words=None` on a segment, whitespace-only words — plus an exact
   save/load roundtrip.
+- **The web UI**, driven in a real browser: upload, queue, live log, clip
+  cards, click-to-play, download, and range requests (206) so seeking works.
 
 Two steps could not be run here and are **not** verified: Whisper itself
 (model weights are fetched from Hugging Face, blocked by this network) and
