@@ -10,3 +10,7 @@ smoke/
 
 # fetched by scripts/fetch_fonts.py
 assets/fonts/
+
+# transfer leftovers, not part of the project
+*.patch
+/reels-engine/
