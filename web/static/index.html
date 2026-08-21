@@ -1,9 +1,12 @@
 <!doctype html>
-<html lang="en">
+<html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>reels-engine</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
 <style>
 :root{
   --bg:#0e1014; --panel:#161920; --panel-2:#1c2029; --line:#272c36; --line-2:#39404e;
@@ -15,7 +18,7 @@
 *{box-sizing:border-box}
 body{
   margin:0; background:var(--bg); color:var(--text); min-height:100vh;
-  font:15px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  font:15px/1.75 Tajawal,system-ui,"Segoe UI",Roboto,sans-serif;
   -webkit-font-smoothing:antialiased;
 }
 .wrap{max-width:1080px; margin:0 auto; padding:36px 22px 90px}
@@ -36,6 +39,12 @@ h1 b{color:var(--accent)}
 .drop .pick{color:var(--accent); text-decoration:underline; text-underline-offset:3px}
 #file{display:none}
 
+.or{display:flex; align-items:center; gap:14px; margin:18px 0 12px; color:var(--faint); font-size:13px}
+.or::before,.or::after{content:""; flex:1; height:1px; background:var(--line)}
+.urlrow{display:block}
+.urlrow input{width:100%; background:var(--panel-2); color:var(--text);
+  border:1px solid var(--line); border-radius:9px; padding:12px 13px; font:inherit; font-size:14px}
+.urlrow input:focus{outline:2px solid var(--accent); outline-offset:1px; border-color:transparent}
 .opts{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; margin:18px 0}
 label{display:flex; flex-direction:column; gap:6px; font-size:12px; color:var(--dim);
   text-transform:uppercase; letter-spacing:.07em}
@@ -65,16 +74,16 @@ h2{font-size:13px; text-transform:uppercase; letter-spacing:.09em; color:var(--d
 
 .job{padding:16px 18px; margin-bottom:14px}
 .job-top{display:flex; align-items:center; gap:12px; flex-wrap:wrap}
-.job-name{font-weight:600; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.job-name{font-weight:600; flex:1; direction:ltr; text-align:right; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .pill{font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
   padding:3px 9px; border-radius:999px; border:1px solid currentColor}
 .pill.queued{color:var(--faint)} .pill.running{color:var(--accent)}
 .pill.done{color:var(--ok)} .pill.empty{color:var(--warn)} .pill.failed{color:var(--bad)}
-.meta{color:var(--faint); font-size:12.5px; font-variant-numeric:tabular-nums}
+.meta{color:var(--faint); font-size:12.5px; font-variant-numeric:tabular-nums; direction:ltr}
 .kill{background:none; border:0; color:var(--faint); cursor:pointer; font-size:18px; line-height:1; padding:2px 4px}
 .kill:hover{color:var(--bad)}
 
-.log{margin-top:12px; background:#0b0d11; border:1px solid var(--line); border-radius:8px;
+.log{direction:ltr; text-align:left; margin-top:12px; background:#0b0d11; border:1px solid var(--line); border-radius:8px;
   padding:11px 13px; max-height:190px; overflow:auto; font-family:var(--mono);
   font-size:12px; line-height:1.65; color:var(--dim); white-space:pre-wrap; word-break:break-word}
 .log b{color:var(--accent); font-weight:600}
@@ -107,7 +116,8 @@ h2{font-size:13px; text-transform:uppercase; letter-spacing:.09em; color:var(--d
 .clip .row{display:flex; align-items:center; gap:8px; margin-bottom:6px}
 .score{font-family:var(--mono); font-size:11px; font-weight:700; padding:2px 7px; border-radius:5px;
   background:var(--accent); color:var(--accent-ink)}
-.dur{color:var(--faint); font-size:12px; font-variant-numeric:tabular-nums; margin-inline-start:auto}
+.dur{color:var(--faint); font-size:12px; font-variant-numeric:tabular-nums;
+  margin-inline-start:auto; direction:ltr}
 .clip h3{font-size:14px; margin:0 0 5px; line-height:1.35; font-weight:600}
 .clip p{margin:0; font-size:12.5px; color:var(--dim); line-height:1.5}
 .dl{display:inline-block; margin-top:10px; font-size:12.5px; color:var(--accent);
@@ -116,52 +126,60 @@ h2{font-size:13px; text-transform:uppercase; letter-spacing:.09em; color:var(--d
 .empty-note{color:var(--faint); font-size:14px; margin-top:10px}
 footer{margin-top:44px; padding-top:18px; border-top:1px solid var(--line);
   color:var(--faint); font-size:12.5px}
-code{font-family:var(--mono); font-size:.9em; color:var(--dim)}
+code{font-family:var(--mono); font-size:.9em; color:var(--dim); direction:ltr;
+  display:inline-block}
+input[type=url]{direction:ltr; text-align:left}
 </style>
 </head>
 <body>
 <div class="wrap">
   <header><h1>reels<b>-</b>engine</h1></header>
-  <p class="sub">Long video in, vertical captioned clips out.</p>
+  <p class="sub">فيديو طويل يدخل، مقاطع عمودية بترجمة محروقة تخرج.</p>
 
   <div class="drop" id="drop">
-    <strong id="dropTitle">Drop a video here</strong>
-    <span>or <span class="pick">choose a file</span> — mp4, mov, mkv, webm</span>
+    <strong id="dropTitle">أفلت الفيديو هنا</strong>
+    <span>أو <span class="pick">اختر ملفاً</span> — mp4، mov، mkv، webm</span>
   </div>
   <input type="file" id="file" accept="video/*">
 
+  <div class="or"><span>أو الصق رابطاً</span></div>
+  <label class="urlrow">
+    <input type="url" id="url" placeholder="https://www.youtube.com/watch?v=...">
+  </label>
+
   <div class="opts">
-    <label>Language
+    <label>اللغة
       <select id="lang">
-        <option value="">Auto-detect</option>
-        <option value="ar">Arabic</option>
-        <option value="en">English</option>
-        <option value="fr">French</option>
-        <option value="es">Spanish</option>
+        <option value="">كشف تلقائي</option>
+        <option value="ar" selected>العربية</option>
+        <option value="en">الإنجليزية</option>
+        <option value="fr">الفرنسية</option>
+        <option value="es">الإسبانية</option>
       </select>
     </label>
-    <label>Whisper model
+    <label>حجم نموذج Whisper
       <select id="model">
-        <option value="tiny">tiny — fastest</option>
+        <option value="tiny">tiny — الأسرع</option>
         <option value="small" selected>small</option>
         <option value="medium">medium</option>
-        <option value="large-v3">large-v3 — GPU</option>
+        <option value="large-v3">large-v3 — يحتاج GPU</option>
       </select>
     </label>
-    <label>Max clips <input type="number" id="clips" value="3" min="1" max="10"></label>
-    <label>Min score <input type="number" id="minScore" value="45" min="0" max="100"></label>
-    <label class="check"><input type="checkbox" id="faces" checked> Track faces</label>
+    <label>أقصى عدد مقاطع <input type="number" id="clips" value="3" min="1" max="10"></label>
+    <label>أقل درجة مقبولة <input type="number" id="minScore" value="45" min="0" max="100"></label>
+    <label class="check"><input type="checkbox" id="faces" checked> تتبّع الوجوه</label>
   </div>
 
-  <button class="go" id="go" disabled>Select a video first</button>
+  <button class="go" id="go" disabled>اختر فيديو أو الصق رابطاً</button>
   <div class="err" id="err"></div>
 
-  <h2 id="jobsHead" hidden>Jobs</h2>
+  <h2 id="jobsHead" hidden>المهام</h2>
   <div id="jobs"></div>
 
   <footer>
-    Runs the same code path as <code>python -m pipeline.run</code>. One job at a
-    time — a render already uses every core. Each Claude call costs money.
+    يشغّل نفس الكود الذي يشغّله <code>python -m pipeline.run</code>. مهمة واحدة في
+    كل مرة — الرندر يستهلك كل الأنوية أصلاً. وكل نداء على Claude يكلّف مالاً.
+    المصدر لازم يكون لك أو مرخّصاً.
   </footer>
 </div>
 
@@ -170,12 +188,14 @@ const $ = id => document.getElementById(id);
 const drop = $("drop"), file = $("file"), go = $("go"), err = $("err");
 let chosen = null, timer = null;
 
-function pick(f){
-  chosen = f;
-  $("dropTitle").textContent = f ? f.name : "Drop a video here";
-  go.disabled = !f;
-  go.textContent = f ? `Make clips from ${f.name}` : "Select a video first";
+function sync(){
+  const f = chosen, u = $("url").value.trim();
+  $("dropTitle").textContent = f ? f.name : "أفلت الفيديو هنا";
+  go.disabled = !f && !u;
+  go.textContent = f ? `قصّ المقاطع من ${f.name}`
+                     : (u ? "قصّ المقاطع من الرابط" : "اختر فيديو أو الصق رابطاً");
 }
+function pick(f){ chosen = f; if (f) $("url").value = ""; sync(); }
 drop.onclick = () => file.click();
 file.onchange = e => pick(e.target.files[0] || null);
 ["dragenter","dragover"].forEach(t => drop.addEventListener(t, e => {
@@ -189,9 +209,10 @@ drop.addEventListener("drop", e => pick(e.dataTransfer.files[0] || null));
 go.onclick = async () => {
   if (!chosen) return;
   err.textContent = "";
-  go.disabled = true; go.textContent = "Uploading…";
+  go.disabled = true; go.textContent = chosen ? "جارٍ الرفع…" : "جارٍ الإرسال…";
   const fd = new FormData();
-  fd.append("video", chosen);
+  if (chosen) fd.append("video", chosen);
+  fd.append("url", $("url").value.trim());
   fd.append("lang", $("lang").value);
   fd.append("model", $("model").value);
   fd.append("clips", $("clips").value);
@@ -202,10 +223,12 @@ go.onclick = async () => {
     if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
     pick(null);
     file.value = "";
+    $("url").value = "";
+    sync();
     refresh();
   } catch (e) {
     err.textContent = e.message;
-    go.disabled = false; go.textContent = `Make clips from ${chosen.name}`;
+    sync();
   }
 };
 
@@ -213,8 +236,8 @@ const esc = s => String(s ?? "").replace(/[&<>"]/g, c => (
   {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const mmss = s => `${Math.floor(s/60)}:${String(Math.round(s%60)).padStart(2,"0")}`;
 
-const STATE_TEXT = {queued:"queued", running:"running", done:"done",
-                    empty:"no clips", failed:"failed"};
+const STATE_TEXT = {queued:"في الطابور", running:"يعمل", done:"تم",
+                    empty:"لا مقاطع", failed:"فشل"};
 
 function renderJob(j){
   const logHtml = (j.log || []).map(l =>
@@ -222,7 +245,7 @@ function renderJob(j){
   const clips = (j.clips || []).map(c => `
     <div class="clip">
       <button class="frame" data-play="/media/${j.id}/${encodeURIComponent(c.file)}"
-              aria-label="Play ${esc(c.title)}">
+              aria-label="شغّل ${esc(c.title)}">
         <img src="/media/${j.id}/${encodeURIComponent(c.thumb || "")}" alt="">
         <span class="play"><span></span></span>
       </button>
@@ -232,7 +255,7 @@ function renderJob(j){
         <h3>${esc(c.title)}</h3>
         <p>${esc(c.reason)}</p>
         <a class="dl" href="/media/${j.id}/${encodeURIComponent(c.file)}"
-           download>Download</a>
+           download>تنزيل</a>
       </div>
     </div>`).join("");
 
@@ -242,12 +265,12 @@ function renderJob(j){
       <span class="pill ${j.state}">${STATE_TEXT[j.state] || j.state}</span>
       <span class="meta">${j.elapsed}s</span>
       ${["done","failed","empty"].includes(j.state)
-        ? `<button class="kill" data-del="${j.id}" title="Delete job">&times;</button>` : ""}
+        ? `<button class="kill" data-del="${j.id}" title="حذف المهمة">&times;</button>` : ""}
     </div>
     ${j.error ? `<div class="err" style="margin-top:12px">${esc(j.error)}</div>` : ""}
     <div class="log">${logHtml}</div>
     ${j.state === "empty"
-      ? `<p class="empty-note">Nothing scored above ${j.options.min_score}. Lower it and try again.</p>` : ""}
+      ? `<p class="empty-note">لا شيء تجاوز الدرجة ${j.options.min_score}. خفّضها وأعد المحاولة.</p>` : ""}
     ${clips ? `<div class="clips">${clips}</div>` : ""}
   </div>`;
 }
@@ -274,6 +297,8 @@ async function refresh(){
   clearTimeout(timer);
   timer = setTimeout(refresh, busy ? 1200 : 6000);
 }
+$("url").addEventListener("input", sync);
+sync();
 refresh();
 </script>
 </body>

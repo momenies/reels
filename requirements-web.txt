@@ -3,3 +3,6 @@
 fastapi>=0.110
 uvicorn[standard]>=0.27
 python-multipart>=0.0.9
+
+# URL ingest (paste a link instead of uploading a file)
+yt-dlp>=2024.1

@@ -15,6 +15,7 @@ video ──▶ ffmpeg ──▶ faster-whisper ──▶ Claude ──▶ Media
 
 | Step | Doing what | Cost driver |
 |---|---|---|
+| `fetch.py` | a URL → a local file (yt-dlp) | bandwidth |
 | `transcribe.py` | 16 kHz audio → word-level transcript | GPU seconds |
 | `score.py` | transcript → ranked clip candidates | LLM tokens |
 | `reframe.py` | face track → smoothed crop plan | CPU seconds |
@@ -71,8 +72,13 @@ pip install -r requirements-web.txt
 python -m web.app                  # http://127.0.0.1:8000
 ```
 
-Drop a video in, watch the pipeline's own output stream as it works, play the
-clips in the page and download the ones you want. It calls the same
+The interface is in Arabic and lays out right to left; the pipeline's log
+stays left to right, because it is ffmpeg's output, not ours.
+
+Drop a video in — or paste a link and `yt-dlp` fetches it, capped at 1080p
+since the pipeline scales to 1080x1920 anyway. Then watch the pipeline's own
+output stream as it works, play the clips in the page and download the ones
+you want. It calls the same
 `pipeline.run.process()` the CLI does, one job at a time — a single render
 already saturates the CPU, so a second job in parallel only makes both slower.
 
@@ -126,6 +132,11 @@ Beyond the smoke test, on real footage:
   save/load roundtrip.
 - **The web UI**, driven in a real browser: upload, queue, live log, clip
   cards, click-to-play, download, and range requests (206) so seeking works.
+  In Arabic, RTL, with the link and file inputs mutually exclusive.
+- **`fetch.download()`** against a local HTTP server, both paths: a real
+  download returning a playable 1920x1080 file, and a 404 raising
+  `FetchError`. Not exercised against YouTube — that host is blocked on the
+  network this was built on.
 
 Two steps could not be run here and are **not** verified: Whisper itself
 (model weights are fetched from Hugging Face, blocked by this network) and

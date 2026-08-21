@@ -28,6 +28,7 @@ from fastapi import FastAPI, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from pipeline import fetch
 from pipeline import run as pipeline_run
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -43,6 +44,7 @@ class Job:
     id: str
     name: str
     options: dict
+    url: str = ""
     state: str = "queued"          # queued | running | done | failed | empty
     log: list[str] = field(default_factory=list)
     clips: list[dict] = field(default_factory=list)
@@ -59,6 +61,7 @@ class Job:
         return {
             "id": self.id,
             "name": self.name,
+            "url": self.url,
             "state": self.state,
             "options": self.options,
             "log": self.log,
@@ -108,8 +111,12 @@ def _worker() -> None:
         stream = _LogStream(job)
         try:
             with contextlib.redirect_stdout(stream):
+                source = job.dir / "source" / job.name
+                if job.url:
+                    source = fetch.download(job.url, job.dir / "source")
+                    job.name = source.name
                 clips = pipeline_run.process(
-                    job.dir / "source" / job.name,
+                    source,
                     job.dir / "out",
                     lang=job.options["lang"] or None,
                     clips=job.options["clips"],
@@ -142,30 +149,47 @@ def _start() -> None:
 
 @app.post("/api/jobs")
 async def create_job(
-    video: UploadFile,
+    video: UploadFile | None = None,
+    url: str = Form(""),
     lang: str = Form(""),
     clips: int = Form(5),
     min_score: int = Form(60),
     model: str = Form("small"),
     faces: bool = Form(True),
 ) -> JSONResponse:
-    name = Path(video.filename or "video.mp4").name
-    if Path(name).suffix.lower() not in VIDEO_SUFFIXES:
-        raise HTTPException(400, f"{name!r} is not a video file "
-                                 f"({', '.join(sorted(VIDEO_SUFFIXES))})")
+    url = url.strip()
+    if url and video is not None and video.filename:
+        raise HTTPException(400, "send a file or a link, not both")
+    if not url and (video is None or not video.filename):
+        raise HTTPException(400, "no video: upload a file or paste a link")
+
+    if url:
+        if not url.startswith(("http://", "https://")):
+            raise HTTPException(400, "the link must start with http:// or https://")
+        if not fetch.available():
+            raise HTTPException(400, "yt-dlp is not installed: "
+                                     "pip install -r requirements-web.txt")
+        name = url
+    else:
+        name = Path(video.filename).name
+        if Path(name).suffix.lower() not in VIDEO_SUFFIXES:
+            raise HTTPException(400, f"{name!r} is not a video file "
+                                     f"({', '.join(sorted(VIDEO_SUFFIXES))})")
 
     job = Job(
         id=uuid.uuid4().hex[:12],
         name=name,
+        url=url,
         options={"lang": lang.strip(), "clips": max(1, min(clips, 10)),
                  "min_score": max(0, min(min_score, 100)), "model": model,
                  "faces": bool(faces)},
     )
     src = job.dir / "source"
     src.mkdir(parents=True, exist_ok=True)
-    with open(src / name, "wb") as fh:          # stream: videos do not fit in RAM
-        while chunk := await video.read(UPLOAD_CHUNK):
-            fh.write(chunk)
+    if not url:
+        with open(src / name, "wb") as fh:      # stream: videos do not fit in RAM
+            while chunk := await video.read(UPLOAD_CHUNK):
+                fh.write(chunk)
 
     JOBS[job.id] = job
     ORDER.insert(0, job.id)
