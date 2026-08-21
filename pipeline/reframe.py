@@ -54,44 +54,106 @@ def probe(video: Path) -> VideoInfo:
     )
 
 
+#: BlazeFace weights, committed so a worker never needs egress to reframe.
+#: Full range on purpose: the short range model is the selfie one and finds
+#: nothing on a normal wide shot. See assets/models/README.md.
+MODEL_PATH = (
+    Path(__file__).resolve().parent.parent
+    / "assets" / "models" / "face_detection_full_range_sparse.tflite"
+)
+
+
+def _open_detector():
+    """A face detector with a ``detect(rgb_frame) -> [(cx, width), ...]`` call.
+
+    MediaPipe dropped the ``mp.solutions`` namespace, so the call this used to
+    make (``mp.solutions.face_detection.FaceDetection``) now raises
+    AttributeError rather than ImportError on any current install — which the
+    old ImportError guard let through as a crash. Prefer the Tasks API and
+    keep the legacy path only for old pins.
+    """
+    import mediapipe as mp
+
+    if hasattr(mp, "tasks"):
+        from mediapipe.tasks import python as mp_python
+        from mediapipe.tasks.python import vision
+
+        if not MODEL_PATH.exists():
+            raise FileNotFoundError(
+                f"{MODEL_PATH} is missing; run: python scripts/fetch_models.py"
+            )
+        det = vision.FaceDetector.create_from_options(
+            vision.FaceDetectorOptions(
+                base_options=mp_python.BaseOptions(model_asset_path=str(MODEL_PATH)),
+                min_detection_confidence=0.5,
+            )
+        )
+
+        def detect(rgb):
+            res = det.detect(mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb))
+            h, w = rgb.shape[:2]
+            return [
+                ((d.bounding_box.origin_x + d.bounding_box.width / 2) / w,
+                 d.bounding_box.width / w)
+                for d in res.detections
+            ]
+
+        return detect, det.close
+
+    legacy = mp.solutions.face_detection.FaceDetection(
+        model_selection=1, min_detection_confidence=0.5
+    )
+
+    def detect(rgb):
+        res = legacy.process(rgb)
+        return [
+            (d.location_data.relative_bounding_box.xmin
+             + d.location_data.relative_bounding_box.width / 2,
+             d.location_data.relative_bounding_box.width)
+            for d in (res.detections or [])
+        ]
+
+    return detect, legacy.close
+
+
 def _detect_face_centers(
     video: Path, start: float, duration: float, sample_fps: float = 4.0
 ) -> list[tuple[float, float | None]]:
     """[(t_relative, face_center_x_normalised or None)] — None = no face found."""
     try:
-        import cv2
-        import mediapipe as mp
+        import cv2  # noqa: F401
+        import mediapipe  # noqa: F401
     except ImportError:
         print("[reframe] mediapipe/opencv missing -> static centre crop")
         return []
 
+    import cv2
+
+    try:
+        detect, close = _open_detector()
+    except Exception as exc:
+        # Never fatal: a centre crop is a worse clip, a crash here throws away
+        # the transcript the caller has already paid for.
+        print(f"[reframe] face detector unavailable ({exc}) -> static centre crop")
+        return []
+
     cap = cv2.VideoCapture(str(video))
-    cap.set(cv2.CAP_PROP_POS_MSEC, start * 1000)
-
-    detector = mp.solutions.face_detection.FaceDetection(
-        model_selection=1, min_detection_confidence=0.5
-    )
-
     out: list[tuple[float, float | None]] = []
     step = 1.0 / sample_fps
     t = 0.0
-    while t < duration:
-        cap.set(cv2.CAP_PROP_POS_MSEC, (start + t) * 1000)
-        ok, frame = cap.read()
-        if not ok:
-            break
-        res = detector.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-        if res.detections:
+    try:
+        while t < duration:
+            cap.set(cv2.CAP_PROP_POS_MSEC, (start + t) * 1000)
+            ok, frame = cap.read()
+            if not ok:
+                break
+            faces = detect(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
             # largest face wins — that's the speaker, not the background
-            best = max(res.detections, key=lambda d: d.location_data.relative_bounding_box.width)
-            box = best.location_data.relative_bounding_box
-            out.append((t, box.xmin + box.width / 2))
-        else:
-            out.append((t, None))
-        t += step
-
-    cap.release()
-    detector.close()
+            out.append((t, max(faces, key=lambda f: f[1])[0] if faces else None))
+            t += step
+    finally:
+        cap.release()
+        close()
     return out
 
 

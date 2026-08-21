@@ -10,6 +10,9 @@ the subtitle filter, and compares the two with ffmpeg's own psnr filter:
   * top half must be identical  -> captions sit in the lower third, clear of
                                    the TikTok/Reels UI chrome
 
+The crop planner is covered too, with face positions injected instead of
+detected, so the hysteresis is tested without pulling in mediapipe.
+
 The comparison renders are lossless (crf 0). At the pipeline's normal crf,
 x264 spends bits differently once captions are on screen, so even untouched
 regions drift by a dB or two and "identical" stops meaning identical.
@@ -111,6 +114,41 @@ def main() -> int:
                           crop_w=crop_w, crop_x0=plan[0][1],
                           sendcmd_file=cmd, ass_file=None, gpu=False, crf=0)
     results.append(check("sendcmd retargets the crop", psnr(static, moved) < 50))
+
+    # the crop planner: hold while the subject is still, ease when they move.
+    # Faces are injected, so this runs without mediapipe or opencv.
+    print("\n[plan]")
+    info = reframe.VideoInfo(width=1920, height=1080, fps=25.0, duration=8.0)
+    still_left = [(i * 0.25, 0.18) for i in range(8)]
+    sweep = [(2.0 + i * 0.25, 0.18 + (i + 1) / 12 * (0.78 - 0.18)) for i in range(12)]
+    still_right = [(5.0 + i * 0.25, 0.78) for i in range(8)]
+    injected = still_left + sweep + still_right
+
+    real_detect = reframe._detect_face_centers
+    reframe._detect_face_centers = lambda *a, **k: injected
+    try:
+        crop_w, plan = reframe.build_crop_plan(src, 0.0, 8.0, info)
+        xs = [x for _, x in plan]
+        max_x = info.width - crop_w
+        results.append(check("crop offsets are even", all(x % 2 == 0 for x in xs)))
+        results.append(check("crop stays inside the frame",
+                             all(0 <= x <= max_x for x in xs)))
+        results.append(check("sendcmd timestamps increase",
+                             all(b[0] > a[0] for a, b in zip(plan, plan[1:]))))
+        results.append(check("crop follows the subject", max(xs) - min(xs) > crop_w // 2,
+                             f"(x {min(xs)} -> {max(xs)})"))
+        # nothing should be emitted while the subject holds still at the start
+        early = [t for t, _ in plan if t < 1.5]
+        results.append(check("crop holds while the subject is still", len(early) <= 1,
+                             f"({len(early)} move(s) before t=1.5)"))
+
+        reframe._detect_face_centers = lambda *a, **k: []
+        crop_w2, plan2 = reframe.build_crop_plan(src, 0.0, 8.0, info)
+        centred = reframe.even_offset((info.width - crop_w2) / 2)
+        results.append(check("no faces falls back to a centred crop",
+                             plan2 == [(0.0, centred)], f"(x={centred})"))
+    finally:
+        reframe._detect_face_centers = real_detect
 
     # a missing font must fail loudly rather than render blank captions
     print("\n[fonts]")

@@ -25,9 +25,9 @@ ARABIC_RANGES = ((0x0600, 0x06FF), (0x0750, 0x077F), (0xFB50, 0xFDFF), (0xFE70, 
 PLAY_RES_X = 1080
 PLAY_RES_Y = 1920
 
-#: Caption fonts live in ``assets/fonts``, put there by
-#: ``scripts/fetch_fonts.py``. System fonts are not reliable in containers,
-#: so the pipeline renders from this directory only.
+#: Caption fonts, committed to the repo. System fonts are not reliable in
+#: containers, so the pipeline renders from this directory only.
+#: ``scripts/fetch_fonts.py`` regenerates them from upstream.
 FONTS_DIR = Path(__file__).resolve().parent.parent / "assets" / "fonts"
 FONT_FILES = {
     "Montserrat ExtraBold": "Montserrat-ExtraBold.ttf",
@@ -59,7 +59,7 @@ def require_font(name: str, fonts_dir: Path | None = None) -> Path:
         raise MissingFontError(
             f"{name!r} needs {path}, which is missing. libass would render "
             f"empty captions and ffmpeg would still exit 0. "
-            f"Run: python scripts/fetch_fonts.py"
+            f"Restore it with: python scripts/fetch_fonts.py"
         )
     return path
 

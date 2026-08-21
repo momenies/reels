@@ -1,6 +1,7 @@
-"""Fetch the caption fonts into assets/fonts/.
+"""Regenerate the caption fonts in assets/fonts/.
 
-Run once after cloning:
+The fonts are committed, so a clone is ready to render with no network and no
+setup step. Run this only to refresh them from upstream:
 
     python scripts/fetch_fonts.py
 
@@ -9,9 +10,8 @@ ships a static ExtraBold; Montserrat only ships a variable font, so its
 ExtraBold instance is generated here and renamed, because libass matches on
 family name and would otherwise fall back to the Regular weight.
 
-The fonts are fetched rather than committed to keep the repo text-only, but
-the pipeline still renders from assets/fonts/ alone — see captions.FONTS_DIR
-for why system fonts are not trusted.
+The pipeline renders from assets/fonts/ alone — see captions.FONTS_DIR for
+why system fonts are not trusted.
 """
 
 from __future__ import annotations
