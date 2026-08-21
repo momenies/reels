@@ -76,7 +76,7 @@ def main() -> None:
         # 4. reframe
         if args.no_faces:
             crop_w = min(int(info.height * 9 / 16) // 2 * 2, info.width)
-            crop_x0, cmdfile = (info.width - crop_w) // 2, None
+            crop_x0, cmdfile = reframe.even_offset((info.width - crop_w) / 2), None
         else:
             crop_w, plan = reframe.build_crop_plan(
                 args.video, clip.start, clip.duration, info
@@ -91,6 +91,8 @@ def main() -> None:
         # 5. captions
         words = score.words_in_range(segments, clip.start, clip.end)
         ass = captions.build_ass(words, work / f"{name}.ass")
+        if not words:
+            print("    [captions] no words in range — rendering without captions")
 
         # 6. render
         mp4 = render.render(
@@ -102,7 +104,7 @@ def main() -> None:
             crop_x0=crop_x0,
             sendcmd_file=cmdfile,
             ass_file=ass,
-            fonts_dir=Path("assets/fonts"),
+            fonts_dir=captions.FONTS_DIR,
             gpu=args.gpu,
         )
         render.thumbnail(mp4, args.out / f"{name}.jpg")

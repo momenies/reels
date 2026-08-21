@@ -59,6 +59,26 @@ def _transcript_text(segments: list[Segment]) -> str:
     return "\n".join(f"[{s.start:.1f}] {s.text}" for s in segments)
 
 
+def _parse_clip(raw: dict) -> Clip | None:
+    """One candidate from the model -> Clip, or None if it is unusable.
+
+    The model is asked for a fixed shape but is not bound to it: extra keys,
+    stringified numbers and missing fields all show up in practice, and
+    Clip(**raw) turns any of them into a crash after the transcript has
+    already been paid for.
+    """
+    try:
+        return Clip(
+            start=float(raw["start"]),
+            end=float(raw["end"]),
+            title=str(raw.get("title") or "clip").strip(),
+            score=int(float(raw.get("score", 0))),
+            reason=str(raw.get("reason") or "").strip(),
+        )
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def _snap_to_sentences(clip: Clip, segments: list[Segment]) -> Clip:
     """Pull boundaries out to the nearest segment edge so speech isn't cut."""
     starts = [s.start for s in segments]
@@ -99,10 +119,19 @@ def find_clips(
         print("[score] model did not return valid JSON:\n", text[:500])
         return []
 
+    if not isinstance(raw, list):
+        print("[score] expected a JSON array, got", type(raw).__name__)
+        return []
+
+    parsed = [_parse_clip(c) for c in raw if isinstance(c, dict)]
+    dropped = sum(1 for c in parsed if c is None)
+    if dropped:
+        print(f"[score] dropped {dropped} malformed candidate(s)")
+
     clips = [
-        _snap_to_sentences(Clip(**c), segments)
-        for c in raw
-        if c.get("score", 0) >= min_score
+        _snap_to_sentences(c, segments)
+        for c in parsed
+        if c is not None and c.score >= min_score
     ]
     clips = [c for c in clips if 15 <= c.duration <= 90]
     clips.sort(key=lambda c: c.score, reverse=True)

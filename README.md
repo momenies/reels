@@ -32,6 +32,36 @@ cp .env.example .env        # add your ANTHROPIC_API_KEY
 Requires `ffmpeg` and `ffprobe` on PATH, built with `--enable-libass`
 (check: `ffmpeg -filters | grep ass`).
 
+Caption fonts are committed in `assets/fonts/` and loaded from there only,
+never from the system — see the Arabic section below for why. The face
+detection model is committed too, so a worker needs no egress to reframe.
+
+`mediapipe` and `opencv` are only needed for face tracking; without them the
+pipeline falls back to a static centre crop and still runs. On a slim image
+they also need `libGLESv2`/`libEGL`:
+
+```bash
+apt-get install -y libgles2 libegl1
+```
+
+## Smoke test
+
+```bash
+python smoke.py      # ~20s, no model downloads, no API key
+```
+
+Renders the ffmpeg half twice — with and without the subtitle filter — and
+compares the two with ffmpeg's `psnr`. Checks that captions are actually
+burned in (rather than silently skipped), that they stay out of the top half,
+that `sendcmd` really retargets the crop, and that a missing font raises
+instead of producing blank output. The crop planner is covered too, with face
+positions injected rather than detected, so the hysteresis is tested without
+pulling in mediapipe.
+
+Runs on the standard library alone — no `pip install` — so a broken
+dependency can never mask a renderer regression. CI runs it on every push
+and pull request.
+
 ## Run
 
 ```bash
@@ -52,11 +82,34 @@ caption styling costs seconds, not minutes.
 
 ## Verified
 
-Rendering was tested end-to-end on this machine:
+`python smoke.py` — 12/12 checks, ffmpeg 6.1.1 with libass:
 
 - Dynamic crop via `sendcmd` retargets mid-clip without re-encoding twice ✓
 - Latin word-level highlight (active word amber + scaled) ✓
 - Arabic cursive shaping and RTL ordering, correct ✓
+- Captions land in the lower third, top half of the frame untouched ✓
+- Crop offsets even, in bounds, timestamps strictly increasing ✓
+- Crop holds while the subject is still and follows when they move ✓
+- No faces falls back to a centred crop ✓
+- A missing font raises `MissingFontError` instead of rendering blank ✓
+
+Beyond the smoke test, on real footage:
+
+- **Face tracking**, against a 1920x1080 clip of a real face crossing the
+  frame: 32/32 samples detected, crop plan tracked 0.18 → 0.77 of frame
+  width, holding at both ends.
+- **`run.py` end to end** with that clip: 1080x1920 H.264/AAC out, captions
+  burned in, thumbnail and `clips.json` written. The subject stays framed
+  from first frame to last.
+- **`transcribe.extract_audio`** produces 16 kHz mono PCM, and the mapping
+  into `Segment`/`Word` survives the shapes faster-whisper actually emits —
+  `words=None` on a segment, whitespace-only words — plus an exact
+  save/load roundtrip.
+
+Two steps could not be run here and are **not** verified: Whisper itself
+(model weights are fetched from Hugging Face, blocked by this network) and
+`score.find_clips` (needs an `ANTHROPIC_API_KEY`). Everything downstream of
+them was driven with a real transcript file and a stubbed clip list.
 
 ## The Arabic detail your competitors get wrong
 
@@ -66,9 +119,16 @@ tags mid-word and shaping breaks; mix Latin and Arabic on one line with
 per-word colouring and bidi can land the highlight on the wrong word.
 
 So `captions.py` uses **word-level pop for LTR, line-level pop for RTL**.
-Bundled font is Tajawal ExtraBold (`assets/fonts/`) — system fonts are not
-reliable in containers, and a missing Arabic font fails *silently*: libass
-draws nothing and ffmpeg exits 0. This exact failure happened during testing.
+The fonts are Tajawal ExtraBold (Arabic) and Montserrat ExtraBold (Latin),
+committed in `assets/fonts/` — system fonts are not reliable in containers,
+and a missing Arabic font fails *silently*: libass draws nothing and ffmpeg
+exits 0. This exact failure happened during testing, so
+`captions.require_font()` checks the file is on disk before any encoding
+starts. `scripts/fetch_fonts.py` regenerates them from google/fonts.
+
+One more placement trap: ASS ignores `MarginV` for the middle alignments
+(`\an4`-`\an6`), so `\an5` plus a generous margin still lands the caption
+dead centre. Captions carry an explicit `\pos()` instead.
 
 ## Why the crop doesn't jitter
 
