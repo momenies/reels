@@ -52,6 +52,7 @@ class Job:
     log: list[str] = field(default_factory=list)
     clips: list[dict] = field(default_factory=list)
     error: str = ""
+    error_kind: str = ""
     created: float = field(default_factory=time.time)
     started: float = 0.0
     finished: float = 0.0
@@ -72,6 +73,7 @@ class Job:
             "log": self.log,
             "clips": self.clips,
             "error": self.error,
+            "error_kind": self.error_kind,
             "elapsed": round((self.finished or time.time()) - (self.started or self.created), 1),
         }
 
@@ -154,7 +156,9 @@ def _worker() -> None:
         except Exception as exc:
             stream.flush()
             job.state = "failed"
-            job.error = f"{type(exc).__name__}: {exc}"
+            job.error = str(exc) if isinstance(exc, fetch.FetchError) \
+                else f"{type(exc).__name__}: {exc}"
+            job.error_kind = getattr(exc, "kind", "")
             with LOCK:
                 job.log.extend(traceback.format_exc().strip().splitlines()[-12:])
         finally:

@@ -243,6 +243,20 @@ const mmss = s => `${Math.floor(s/60)}:${String(Math.round(s%60)).padStart(2,"0"
 const STATE_TEXT = {queued:"في الطابور", running:"يعمل", done:"تم",
                     empty:"لا مقاطع", failed:"فشل"};
 
+// أسباب فشل السحب المعروفة، بكلماتنا لا بكلمات yt-dlp
+const FETCH_ERRORS = {
+  BOT_CHECK: "يوتيوب رفض التنزيل: يعتبر هذا الجهاز حركة آلية. خوادم السحابة — "
+           + "Codespaces ومعظم الـ VPS — محجوبة افتراضياً، ولا يوجد خيار في "
+           + "yt-dlp يغيّر ذلك بشكل موثوق. لفيديوك أنت: نزّل الأصل من YouTube "
+           + "Studio وارفع الملف هنا — وهو أعلى جودة من نسخة يوتيوب المُعاد ترميزها.",
+  PRIVATE: "هذا الفيديو خاص أو للأعضاء فقط، فلا يمكن سحبه.",
+  UNAVAILABLE: "هذا الفيديو غير متاح — محذوف، أو الرابط خاطئ.",
+  GEOBLOCKED: "هذا الفيديو غير متاح من منطقة هذا الجهاز.",
+  LIVE: "هذا بث مباشر. انتظر نشر التسجيل.",
+  NOT_INSTALLED: "yt-dlp غير مثبّت: pip install -r requirements-web.txt",
+  EMPTY: "yt-dlp أبلغ بالنجاح لكنه لم يكتب أي ملف.",
+};
+
 function renderJob(j){
   const logHtml = (j.log || []).map(l =>
     /^(===|\[)/.test(l) ? `<b>${esc(l)}</b>` : esc(l)).join("\n");
@@ -274,7 +288,9 @@ function renderJob(j){
         ? `<div class="src"><b>${esc(j.source_title)}</b>${
              j.source_channel ? " · " + esc(j.source_channel) : ""}</div>` : ""}
     </div>
-    ${j.error ? `<div class="err" style="margin-top:12px">${esc(j.error)}</div>` : ""}
+    ${j.error
+      ? `<div class="err" style="margin-top:12px">${
+           esc(FETCH_ERRORS[j.error_kind] || j.error)}</div>` : ""}
     <div class="log">${logHtml}</div>
     ${j.state === "empty"
       ? `<p class="empty-note">لا شيء تجاوز الدرجة ${j.options.min_score}. خفّضها وأعد المحاولة.</p>` : ""}
