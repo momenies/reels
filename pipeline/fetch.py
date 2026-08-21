@@ -25,6 +25,24 @@ def available() -> bool:
     return shutil.which("yt-dlp") is not None
 
 
+def _reason(stderr: str) -> str:
+    """The one useful line out of yt-dlp's error output.
+
+    Its failures carry a paragraph of boilerplate asking you to file an issue
+    and upgrade. Shown verbatim in a job card that buries the actual cause,
+    which is usually the first clause.
+    """
+    for line in reversed((stderr or "").strip().splitlines()):
+        line = line.strip()
+        if not line.startswith("ERROR:"):
+            continue
+        line = line[len("ERROR:"):].strip()
+        for boilerplate in ("; please report this issue", " (caused by "):
+            line = line.split(boilerplate)[0]
+        return line.strip()
+    return ""
+
+
 def download(url: str, dest_dir: Path, *, max_height: int = 1080) -> Path:
     """Download `url` into `dest_dir` and return the file.
 
@@ -50,8 +68,7 @@ def download(url: str, dest_dir: Path, *, max_height: int = 1080) -> Path:
             print(f"[fetch] {line.strip()}")
 
     if proc.returncode != 0:
-        tail = (proc.stderr or "").strip().splitlines()
-        raise FetchError(tail[-1] if tail else f"yt-dlp exited {proc.returncode}")
+        raise FetchError(_reason(proc.stderr) or f"yt-dlp exited {proc.returncode}")
 
     files = [p for p in dest_dir.iterdir() if p.is_file()]
     if not files:

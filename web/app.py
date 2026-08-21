@@ -30,6 +30,7 @@ from fastapi.staticfiles import StaticFiles
 
 from pipeline import fetch
 from pipeline import run as pipeline_run
+from pipeline import youtube
 
 ROOT = Path(__file__).resolve().parent.parent
 JOBS_DIR = ROOT / "jobs"
@@ -46,6 +47,8 @@ class Job:
     options: dict
     url: str = ""
     state: str = "queued"          # queued | running | done | failed | empty
+    source_title: str = ""
+    source_channel: str = ""
     log: list[str] = field(default_factory=list)
     clips: list[dict] = field(default_factory=list)
     error: str = ""
@@ -62,6 +65,8 @@ class Job:
             "id": self.id,
             "name": self.name,
             "url": self.url,
+            "source_title": self.source_title,
+            "source_channel": self.source_channel,
             "state": self.state,
             "options": self.options,
             "log": self.log,
@@ -101,6 +106,24 @@ class _LogStream(io.TextIOBase):
             self._buf = ""
 
 
+def _describe_source(job: Job) -> None:
+    """Name the video before spending bandwidth on it.
+
+    Best effort: the Data API cannot download, so failing here says nothing
+    about whether the download will work. A missing key, a non-YouTube link
+    or a private video all just mean the job runs without a nice title.
+    """
+    try:
+        info = youtube.describe(job.url)
+    except youtube.YouTubeError as exc:
+        print(f"[youtube] no metadata ({exc})")
+        return
+    job.source_title = info.title
+    job.source_channel = info.channel_title
+    print(f"[youtube] {info.title}")
+    print(f"[youtube] {info.channel_title} · {info.duration:.0f}s")
+
+
 def _worker() -> None:
     while True:
         job_id = WORK.get()
@@ -113,6 +136,7 @@ def _worker() -> None:
             with contextlib.redirect_stdout(stream):
                 source = job.dir / "source" / job.name
                 if job.url:
+                    _describe_source(job)
                     source = fetch.download(job.url, job.dir / "source")
                     job.name = source.name
                 clips = pipeline_run.process(

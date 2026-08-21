@@ -74,6 +74,9 @@ h2{font-size:13px; text-transform:uppercase; letter-spacing:.09em; color:var(--d
 
 .job{padding:16px 18px; margin-bottom:14px}
 .job-top{display:flex; align-items:center; gap:12px; flex-wrap:wrap}
+.src{width:100%; margin-top:2px; color:var(--faint); font-size:12.5px;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.src b{color:var(--dim); font-weight:500}
 .job-name{font-weight:600; flex:1; direction:ltr; text-align:right; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .pill{font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
   padding:3px 9px; border-radius:999px; border:1px solid currentColor}
@@ -207,7 +210,8 @@ file.onchange = e => pick(e.target.files[0] || null);
 drop.addEventListener("drop", e => pick(e.dataTransfer.files[0] || null));
 
 go.onclick = async () => {
-  if (!chosen) return;
+  const link = $("url").value.trim();
+  if (!chosen && !link) return;
   err.textContent = "";
   go.disabled = true; go.textContent = chosen ? "جارٍ الرفع…" : "جارٍ الإرسال…";
   const fd = new FormData();
@@ -266,6 +270,9 @@ function renderJob(j){
       <span class="meta">${j.elapsed}s</span>
       ${["done","failed","empty"].includes(j.state)
         ? `<button class="kill" data-del="${j.id}" title="حذف المهمة">&times;</button>` : ""}
+      ${j.source_title
+        ? `<div class="src"><b>${esc(j.source_title)}</b>${
+             j.source_channel ? " · " + esc(j.source_channel) : ""}</div>` : ""}
     </div>
     ${j.error ? `<div class="err" style="margin-top:12px">${esc(j.error)}</div>` : ""}
     <div class="log">${logHtml}</div>
