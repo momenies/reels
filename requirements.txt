@@ -1,0 +1,14 @@
+# Core pipeline
+anthropic>=0.40
+python-dotenv>=1.0
+faster-whisper>=1.0
+
+# Caption fonts (scripts/fetch_fonts.py instances Montserrat ExtraBold from
+# the variable font — libass matches on family name and would otherwise fall
+# back to Regular weight)
+fonttools>=4.50
+
+# Face tracking (optional — without these, reframe falls back to a static
+# centre crop and the pipeline still runs; see --no-faces)
+opencv-python-headless>=4.9
+mediapipe>=0.10

@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.venv/
+.env
+out/
+smoke/
+*.mp4
+*.wav
+*.jpg
+
+# fetched by scripts/fetch_fonts.py
+assets/fonts/
