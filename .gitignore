@@ -4,6 +4,7 @@ __pycache__/
 .env
 out/
 smoke/
+jobs/
 *.mp4
 *.wav
 *.jpg

@@ -10,6 +10,9 @@ the subtitle filter, and compares the two with ffmpeg's own psnr filter:
   * top half must be identical  -> captions sit in the lower third, clear of
                                    the TikTok/Reels UI chrome
 
+A cut that falls outside the source is checked the same way, because ffmpeg
+reports success for it while writing a clip with no frames in it.
+
 The crop planner is covered too, with face positions injected instead of
 detected, so the hysteresis is tested without pulling in mediapipe.
 
@@ -149,6 +152,21 @@ def main() -> int:
                              plan2 == [(0.0, centred)], f"(x={centred})"))
     finally:
         reframe._detect_face_centers = real_detect
+
+    # a cut past the end of the source makes ffmpeg exit 0 with an empty file
+    print("\n[bounds]")
+    try:
+        render.render(src, WORK / "past-end.mp4", start=10.0, duration=4.0,
+                      crop_w=crop_w, crop_x0=plan[0][1],
+                      sendcmd_file=None, ass_file=None, gpu=False)
+    except render.RenderedNothingError:
+        results.append(check("a cut past the end of the source raises", True))
+    except Exception as exc:
+        results.append(check("a cut past the end of the source raises", False,
+                             f"(raised {type(exc).__name__} instead)"))
+    else:
+        results.append(check("a cut past the end of the source raises", False,
+                             "(returned an empty clip)"))
 
     # a missing font must fail loudly rather than render blank captions
     print("\n[fonts]")

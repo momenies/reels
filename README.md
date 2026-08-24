@@ -15,6 +15,7 @@ video ──▶ ffmpeg ──▶ faster-whisper ──▶ Claude ──▶ Media
 
 | Step | Doing what | Cost driver |
 |---|---|---|
+| `fetch.py` | a URL → a local file (yt-dlp) | bandwidth |
 | `transcribe.py` | 16 kHz audio → word-level transcript | GPU seconds |
 | `score.py` | transcript → ranked clip candidates | LLM tokens |
 | `reframe.py` | face track → smoothed crop plan | CPU seconds |
@@ -64,6 +65,29 @@ and pull request.
 
 ## Run
 
+### As a web UI
+
+```bash
+pip install -r requirements-web.txt
+python -m web.app                  # http://127.0.0.1:8000
+```
+
+The interface is in Arabic and lays out right to left; the pipeline's log
+stays left to right, because it is ffmpeg's output, not ours.
+
+Drop a video in — or paste a link and `yt-dlp` fetches it, capped at 1080p
+since the pipeline scales to 1080x1920 anyway. Then watch the pipeline's own
+output stream as it works, play the clips in the page and download the ones
+you want. It calls the same
+`pipeline.run.process()` the CLI does, one job at a time — a single render
+already saturates the CPU, so a second job in parallel only makes both slower.
+
+It binds to localhost and trusts whoever is at the keyboard. Don't expose it
+to a network you don't control: it accepts uploads and spends money on the
+Claude call for each one.
+
+### As a CLI
+
 ```bash
 python -m pipeline.run input.mp4 --lang ar --clips 5 --out out/
 ```
@@ -82,7 +106,7 @@ caption styling costs seconds, not minutes.
 
 ## Verified
 
-`python smoke.py` — 12/12 checks, ffmpeg 6.1.1 with libass:
+`python smoke.py` — 13/13 checks, ffmpeg 6.1.1 with libass:
 
 - Dynamic crop via `sendcmd` retargets mid-clip without re-encoding twice ✓
 - Latin word-level highlight (active word amber + scaled) ✓
@@ -91,6 +115,7 @@ caption styling costs seconds, not minutes.
 - Crop offsets even, in bounds, timestamps strictly increasing ✓
 - Crop holds while the subject is still and follows when they move ✓
 - No faces falls back to a centred crop ✓
+- A cut past the end of the source raises instead of writing an empty clip ✓
 - A missing font raises `MissingFontError` instead of rendering blank ✓
 
 Beyond the smoke test, on real footage:
@@ -105,6 +130,13 @@ Beyond the smoke test, on real footage:
   into `Segment`/`Word` survives the shapes faster-whisper actually emits —
   `words=None` on a segment, whitespace-only words — plus an exact
   save/load roundtrip.
+- **The web UI**, driven in a real browser: upload, queue, live log, clip
+  cards, click-to-play, download, and range requests (206) so seeking works.
+  In Arabic, RTL, with the link and file inputs mutually exclusive.
+- **`fetch.download()`** against a local HTTP server, both paths: a real
+  download returning a playable 1920x1080 file, and a 404 raising
+  `FetchError`. Not exercised against YouTube — that host is blocked on the
+  network this was built on.
 
 Two steps could not be run here and are **not** verified: Whisper itself
 (model weights are fetched from Hugging Face, blocked by this network) and

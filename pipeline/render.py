@@ -56,7 +56,30 @@ def render(
     ]
     print("[render]", " ".join(shlex.quote(c) for c in cmd[:12]), "...")
     subprocess.run(cmd, check=True)
+
+    # ffmpeg exits 0 having written a valid container with no frames in it —
+    # asked to cut past the end of the source, for one. Catch it here, where
+    # the reason is still obvious, rather than in thumbnail() three lines on.
+    if not _has_frames(out):
+        raise RenderedNothingError(
+            f"{out.name} has no video frames: cut {start:.2f}s->{start + duration:.2f}s "
+            f"is outside {src.name}"
+        )
     return out
+
+
+class RenderedNothingError(RuntimeError):
+    """ffmpeg exited 0 but produced a clip with no frames."""
+
+
+def _has_frames(video: Path) -> bool:
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0",
+         "-count_packets", "-show_entries", "stream=nb_read_packets",
+         "-of", "default=nw=1:nk=1", str(video)],
+        capture_output=True, text=True,
+    )
+    return probe.returncode == 0 and probe.stdout.strip() not in ("", "0", "N/A")
 
 
 def thumbnail(clip: Path, out: Path, at: float = 0.5) -> Path:
