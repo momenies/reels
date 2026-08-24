@@ -45,9 +45,23 @@ def upload(client, name="a.mp4", body=b"\x00" * 2048, **form):
 
 
 class TestMeta:
-    def test_health(self, client):
+    def test_health_reports_the_machine_not_a_constant(self, client):
+        import shutil
+
         body = client.get("/api/health").json()
-        assert body["ok"] is True and body["version"]
+        assert body["version"]
+        # `ok` mirrors whether ffmpeg is installed here, which is a property of
+        # the machine, not of the API. CI's unit runner has no ffmpeg on
+        # purpose — asserting True would only prove the runner was configured
+        # the way this test wanted.
+        assert body["ok"] == body["ffmpeg"] == (shutil.which("ffmpeg") is not None)
+
+    def test_health_goes_not_ok_when_ffmpeg_is_missing(self, client, monkeypatch):
+        from server import app as server_app
+
+        monkeypatch.setattr(server_app.shutil, "which", lambda name: None)
+        body = client.get("/api/health").json()
+        assert body["ok"] is False and body["ffmpeg"] is False
 
     def test_styles_are_exposed_with_css_colours(self, client):
         styles = client.get("/api/styles").json()["styles"]
