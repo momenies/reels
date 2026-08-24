@@ -1,4 +1,4 @@
-# Core pipeline
+# ── Core pipeline ──────────────────────────────────────────────────────────
 anthropic>=0.40
 python-dotenv>=1.0
 faster-whisper>=1.0
@@ -8,8 +8,20 @@ faster-whisper>=1.0
 # back to Regular weight)
 fonttools>=4.50
 
-# Face tracking (optional — without these, reframe falls back to a static
-# centre crop and the pipeline still runs; see --no-faces).
+# ── Web layer (server/ + web/) ─────────────────────────────────────────────
+# The pipeline itself runs without these; only `uvicorn server.app:app` needs them.
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9
+
+# ── URL ingest (optional) ──────────────────────────────────────────────────
+# Paste a link instead of uploading. Without it the studio still accepts
+# uploads and /api/health reports url_ingest: false.
+yt-dlp>=2024.1
+
+# ── Face tracking (optional) ───────────────────────────────────────────────
+# Without these, reframe falls back to a static centre crop and the pipeline
+# still runs; see --no-faces.
 # Needs libGLESv2/libEGL present: apt-get install -y libgles2 libegl1
 opencv-python-headless>=4.9
 mediapipe>=0.10

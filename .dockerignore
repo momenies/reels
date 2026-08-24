@@ -1,0 +1,17 @@
+.git/
+.github/
+.venv/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+data/
+out/
+smoke/
+tests/
+*.md
+!README.md
+.env
+*.mp4
+*.wav
+*.jpg
+*.png

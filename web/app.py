@@ -141,6 +141,7 @@ def _worker() -> None:
                     _describe_source(job)
                     source = fetch.download(job.url, job.dir / "source")
                     job.name = source.name
+                # process() returns a Result; this tool only wants the clips.
                 clips = pipeline_run.process(
                     source,
                     job.dir / "out",
@@ -149,7 +150,7 @@ def _worker() -> None:
                     min_score=job.options["min_score"],
                     model=job.options["model"],
                     faces=job.options["faces"],
-                )
+                ).clips
             stream.flush()
             job.clips = clips
             job.state = "done" if clips else "empty"

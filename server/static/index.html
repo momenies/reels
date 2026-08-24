@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en" dir="ltr" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Long video in, vertical captioned clips out. Face-tracked reframing, word-level captions, Arabic done right.">
+<meta name="color-scheme" content="dark light">
+<title>reels-engine — clip studio</title>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<div class="shell">
+
+  <header class="header">
+    <div class="brand">
+      <div class="brand__mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 3v18l14-9L5 3z" fill="#fff"/>
+        </svg>
+      </div>
+      <div>
+        <div class="brand__name">reels<span style="color:var(--text-faint)">-engine</span></div>
+        <div class="brand__tag" data-i18n="brand.tag">long video in, vertical clips out</div>
+      </div>
+    </div>
+
+    <div class="header__actions">
+      <div class="seg" role="group" aria-label="Language">
+        <button type="button" data-lang-ui="en" aria-pressed="true">EN</button>
+        <button type="button" data-lang-ui="ar" aria-pressed="false">ع</button>
+      </div>
+      <button class="btn btn--icon btn--ghost" id="theme-toggle" title="Theme" aria-label="Toggle theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <main class="main">
+
+    <!-- ── hero ─────────────────────────────────────────────────────── -->
+    <section class="hero" id="hero">
+      <div class="hero__badge">
+        <span class="dot" id="health-dot"></span>
+        <span id="health-text" data-i18n="hero.badge">engine ready</span>
+      </div>
+      <h1 data-i18n-html="hero.title">Turn one long video into <em>clips people finish</em></h1>
+      <p data-i18n="hero.sub">Face-tracked 9:16 reframing, word-level captions that actually shape Arabic, and a model that picks the moments — not the middle.</p>
+    </section>
+
+    <!-- ── studio ───────────────────────────────────────────────────── -->
+    <section class="studio" id="studio">
+
+      <div>
+        <div class="drop" id="drop">
+          <input type="file" id="file" accept="video/*,audio/*">
+          <div id="drop-empty">
+            <div class="drop__icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v13"/>
+              </svg>
+            </div>
+            <div class="drop__title" data-i18n="drop.title">Drop a video here</div>
+            <div class="drop__sub" data-i18n="drop.sub">or pick one from your machine — podcasts, interviews, streams, lectures</div>
+            <button class="btn btn--primary btn--lg" type="button" id="browse" data-i18n="drop.browse">Choose a file</button>
+            <div class="drop__types" data-i18n="drop.types">MP4 · MOV · MKV · WEBM · AVI · MP3 · WAV</div>
+          </div>
+
+          <div class="drop__or" id="url-row" hidden>
+            <span class="drop__or-line"></span>
+            <span data-i18n="drop.or">or paste a link</span>
+            <span class="drop__or-line"></span>
+          </div>
+          <div class="url-field" id="url-field" hidden>
+            <input class="input" id="url" type="url" inputmode="url"
+                   placeholder="https://www.youtube.com/watch?v=...">
+          </div>
+
+          <div class="picked" id="drop-picked" hidden>
+            <div class="picked__thumb" id="picked-thumb">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <rect x="2" y="4" width="20" height="16" rx="2.5"/><path d="m10 9 5 3-5 3V9z" fill="currentColor" stroke="none"/>
+              </svg>
+            </div>
+            <div class="picked__meta">
+              <div class="picked__name" id="picked-name"></div>
+              <div class="picked__facts" id="picked-facts"></div>
+            </div>
+            <button class="btn btn--sm btn--ghost" type="button" id="clear-file" data-i18n="drop.change">Change</button>
+          </div>
+        </div>
+
+        <div class="card panel" style="margin-top:18px">
+          <div class="panel__head">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <path d="M4 7h16M4 12h16M4 17h10"/>
+            </svg>
+            <h3 data-i18n="captions.head">Caption style</h3>
+          </div>
+          <div class="styles" id="styles"></div>
+        </div>
+      </div>
+
+      <!-- settings -->
+      <div class="card panel" id="settings">
+        <div class="panel__head">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+          <h3 data-i18n="settings.head">Settings</h3>
+        </div>
+
+        <div class="grid-2">
+          <div class="field">
+            <label class="field__label" for="lang" data-i18n="settings.lang">Spoken language</label>
+            <select class="select" id="lang">
+              <option value="" data-i18n="settings.lang.auto">Detect automatically</option>
+              <option value="ar">العربية — Arabic</option>
+              <option value="en">English</option>
+              <option value="fr">Français</option>
+              <option value="es">Español</option>
+              <option value="de">Deutsch</option>
+              <option value="tr">Türkçe</option>
+              <option value="ur">اردو — Urdu</option>
+              <option value="hi">हिन्दी — Hindi</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="field__label" for="model" data-i18n="settings.model">Accuracy</label>
+            <select class="select" id="model">
+              <option value="" data-i18n="settings.model.default">Balanced (default)</option>
+              <option value="small" data-i18n="settings.model.fast">Fast — small</option>
+              <option value="medium" data-i18n="settings.model.better">Better — medium</option>
+              <option value="large-v3" data-i18n="settings.model.best">Best — large-v3 (GPU)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="field__label">
+            <span data-i18n="settings.clips">How many clips</span>
+          </span>
+          <div class="range">
+            <input type="range" id="clips" min="1" max="12" value="5" step="1">
+            <span class="range__value" id="clips-value">5</span>
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="field__label">
+            <span data-i18n="settings.bar">Quality bar</span>
+            <span class="field__hint" data-i18n="settings.bar.hint">lower it if nothing passes</span>
+          </span>
+          <div class="range">
+            <input type="range" id="min-score" min="0" max="95" value="60" step="5">
+            <span class="range__value" id="min-score-value">60</span>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <label class="switch">
+          <input type="checkbox" id="faces" checked>
+          <span class="switch__track"></span>
+          <span class="switch__text">
+            <span class="switch__title" data-i18n="settings.faces">Track the speaker</span>
+            <span class="switch__desc" data-i18n="settings.faces.desc">The crop follows whoever is talking instead of sitting centred</span>
+          </span>
+        </label>
+
+        <label class="switch">
+          <input type="checkbox" id="hook">
+          <span class="switch__track"></span>
+          <span class="switch__text">
+            <span class="switch__title" data-i18n="settings.hook">Burn in a hook title</span>
+            <span class="switch__desc" data-i18n="settings.hook.desc">Pins the generated headline to the top third of the frame</span>
+          </span>
+        </label>
+
+        <div class="divider"></div>
+
+        <button class="btn btn--primary btn--lg" id="submit" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m13 2-3 8h6l-3 12"/>
+          </svg>
+          <span data-i18n="settings.submit">Generate clips</span>
+        </button>
+        <div id="settings-note"></div>
+      </div>
+    </section>
+
+    <!-- ── progress ─────────────────────────────────────────────────── -->
+    <section class="section" id="progress-section" hidden>
+      <div class="section__head">
+        <h2 class="section__title" data-i18n="progress.head">Working on it</h2>
+        <div class="section__spacer"></div>
+        <button class="btn btn--sm btn--ghost" id="progress-hide" data-i18n="progress.new">Start another</button>
+      </div>
+      <div class="card progress">
+        <div class="progress__top">
+          <div class="progress__name" id="progress-name"></div>
+          <div class="progress__pct" id="progress-pct">0%</div>
+        </div>
+        <div class="bar" id="progress-bar"><div class="bar__fill" id="progress-fill"></div></div>
+        <div class="progress__msg" id="progress-msg"></div>
+        <div class="stages" id="stages"></div>
+        <div id="progress-alert" style="margin-top:16px"></div>
+      </div>
+    </section>
+
+    <!-- ── results ──────────────────────────────────────────────────── -->
+    <section class="section" id="clips-section" hidden>
+      <div class="section__head">
+        <h2 class="section__title" data-i18n="clips.head">Your clips</h2>
+        <span class="section__count" id="clips-count">0</span>
+        <div class="section__spacer"></div>
+        <button class="btn btn--sm" id="download-all">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>
+          </svg>
+          <span data-i18n="clips.downloadAll">Download all</span>
+        </button>
+      </div>
+      <div class="clips" id="clips-grid"></div>
+    </section>
+
+    <!-- ── history ──────────────────────────────────────────────────── -->
+    <section class="section" id="jobs-section" hidden>
+      <div class="section__head">
+        <h2 class="section__title" data-i18n="jobs.head">Recent jobs</h2>
+        <div class="section__spacer"></div>
+        <button class="btn btn--sm btn--ghost" id="jobs-refresh" data-i18n="jobs.refresh">Refresh</button>
+      </div>
+      <div class="jobs" id="jobs"></div>
+    </section>
+
+  </main>
+
+  <footer class="footer">
+    <span data-i18n="footer.note">Source video has to be yours or licensed.</span>
+    <a href="/docs" target="_blank" rel="noopener">API</a>
+  </footer>
+</div>
+
+<div class="toast-host" id="toasts"></div>
+
+<div class="lightbox" id="lightbox" hidden>
+  <button class="btn btn--icon lightbox__close" id="lightbox-close" aria-label="Close">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+  </button>
+  <div class="lightbox__inner">
+    <video id="lightbox-video" controls playsinline></video>
+    <div class="lightbox__side">
+      <div class="lightbox__title" id="lightbox-title"></div>
+      <div class="lightbox__stats" id="lightbox-stats"></div>
+      <div class="lightbox__reason" id="lightbox-reason"></div>
+      <a class="btn btn--primary" id="lightbox-download" download>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>
+        </svg>
+        <span data-i18n="clips.download">Download</span>
+      </a>
+    </div>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

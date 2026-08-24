@@ -1,8 +1,7 @@
-# Web UI only (python -m web.app). The pipeline itself does not need these.
+# Web UI only (python -m web.app).
+#
+# These moved into requirements.txt when the server/ layer landed and started
+# needing the same packages. Kept as an entry point so `pip install -r
+# requirements-web.txt` still does the right thing — but the pins live in one
+# place now, because two copies of the same pins drift.
 -r requirements.txt
-fastapi>=0.110
-uvicorn[standard]>=0.27
-python-multipart>=0.0.9
-
-# URL ingest (paste a link instead of uploading a file)
-yt-dlp>=2024.1

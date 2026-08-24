@@ -1,3 +1,14 @@
 """reels-engine: long video in, vertical captioned clips out."""
 
-__all__ = ["captions", "reframe", "render", "score", "transcribe"]
+__version__ = "1.0.0"
+
+__all__ = [
+    "captions",
+    "config",
+    "log",
+    "reframe",
+    "render",
+    "run",
+    "score",
+    "transcribe",
+]
