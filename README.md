@@ -1,12 +1,17 @@
 # reels-engine
 
-The core of a Ssemble-style product: long video in, vertical captioned clips out.
+Long video in, vertical captioned clips out — with a studio in front of it.
 
-This is deliberately the hard half. Auth, dashboards, and scheduling are
-solved problems you can build in a week. Clip quality is what people pay for,
-and it's where a clone either works or doesn't.
+The hard half is clip quality: face-tracked 9:16 reframing, word-level captions
+that shape Arabic correctly, and a model that picks the moments instead of the
+middle. The product layer around it — upload, queue, live progress, gallery,
+download — now ships too.
 
-## Pipeline
+```
+                          ┌─ web/     drag-drop studio, AR/EN, live progress
+   browser ──▶ FastAPI ──▶├─ SQLite   job store, survives a restart
+                          └─ worker ──▶ pipeline ──▶ clips
+```
 
 ```
 video ──▶ ffmpeg ──▶ faster-whisper ──▶ Claude ──▶ MediaPipe ──▶ ASS ──▶ ffmpeg
@@ -21,48 +26,43 @@ video ──▶ ffmpeg ──▶ faster-whisper ──▶ Claude ──▶ Media
 | `captions.py` | word timings → styled ASS subtitles | free |
 | `render.py` | cut + crop + burn + encode | GPU/CPU seconds |
 
-## Setup
+## Quick start
+
+```bash
+docker compose up --build          # needs ANTHROPIC_API_KEY in .env
+```
+
+Then open <http://localhost:8000>. Or without Docker:
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env        # add your ANTHROPIC_API_KEY
+cp .env.example .env               # add your ANTHROPIC_API_KEY
+make serve                         # http://localhost:8000
 ```
 
 Requires `ffmpeg` and `ffprobe` on PATH, built with `--enable-libass`
 (check: `ffmpeg -filters | grep ass`).
 
-Caption fonts are committed in `assets/fonts/` and loaded from there only,
-never from the system — see the Arabic section below for why. The face
-detection model is committed too, so a worker needs no egress to reframe.
+## The studio
 
-`mediapipe` and `opencv` are only needed for face tracking; without them the
-pipeline falls back to a static centre crop and still runs. On a slim image
-they also need `libGLESv2`/`libEGL`:
+Drag a video in, pick a caption style, watch it work, download the clips.
 
-```bash
-apt-get install -y libgles2 libegl1
-```
+- **Live progress over SSE**, with a polling fallback for proxies that buffer
+  event streams. Progress is stored on the job row, so a refresh, a second
+  tab, or a reconnect all see the same truth.
+- **Bilingual, RTL-native.** Arabic flips the whole document, not just the
+  strings — every rule uses logical properties.
+- **Hover-to-preview clips**, score badges, a lightbox player, per-clip
+  download, and a zip of the lot.
+- **Job history** that survives a restart: interrupted jobs are requeued, and
+  the cached transcript means a rerun costs seconds.
+- Dark and light, and it works on a phone.
 
-## Smoke test
+## CLI
 
-```bash
-python smoke.py      # ~20s, no model downloads, no API key
-```
-
-Renders the ffmpeg half twice — with and without the subtitle filter — and
-compares the two with ffmpeg's `psnr`. Checks that captions are actually
-burned in (rather than silently skipped), that they stay out of the top half,
-that `sendcmd` really retargets the crop, and that a missing font raises
-instead of producing blank output. The crop planner is covered too, with face
-positions injected rather than detected, so the hysteresis is tested without
-pulling in mediapipe.
-
-Runs on the standard library alone — no `pip install` — so a broken
-dependency can never mask a renderer regression. CI runs it on every push
-and pull request.
-
-## Run
+The studio and the CLI call the same `pipeline.run.process` — a queue that
+reimplements the pipeline is a queue that drifts away from it.
 
 ```bash
 python -m pipeline.run input.mp4 --lang ar --clips 5 --out out/
@@ -75,41 +75,53 @@ python -m pipeline.run input.mp4 --lang ar --clips 5 --out out/
 | `--device cuda --gpu` | GPU transcription + NVENC encoding |
 | `--no-faces` | static centre crop, ~3x faster |
 | `--min-score 45` | loosen if nothing passes the bar |
+| `--style beast` | caption preset — `pop`, `beast`, `clean`, `neon`, `boxed` |
+| `--hook` | burn the generated headline into the top third |
+| `--workers 4` | parallel clip renders |
 
 Output: `NN-title.mp4`, `NN-title.jpg`, plus `clips.json` with scores and
-reasons. The transcript is cached in `out/.work/`, so re-running to tweak
-caption styling costs seconds, not minutes.
+reasons. The transcript is cached in `out/.work/` **per model and language**,
+so re-running to tweak caption styling costs seconds, not minutes.
 
-## Verified
+## API
 
-`python smoke.py` — 12/12 checks, ffmpeg 6.1.1 with libass:
+| Route | Does |
+|---|---|
+| `POST /api/jobs` | multipart upload + options → queued job |
+| `GET /api/jobs/{id}` | status, progress, clips |
+| `GET /api/jobs/{id}/events` | SSE progress stream |
+| `GET /api/jobs/{id}/files/{name}` | a clip or thumbnail (supports Range) |
+| `GET /api/jobs/{id}/download` | every clip as one zip |
+| `DELETE /api/jobs/{id}` | cancel if queued, then remove job and media |
+| `GET /api/styles` | caption presets, with CSS colours for a picker |
+| `GET /api/health` | ffmpeg present, queue depth |
 
-- Dynamic crop via `sendcmd` retargets mid-clip without re-encoding twice ✓
-- Latin word-level highlight (active word amber + scaled) ✓
-- Arabic cursive shaping and RTL ordering, correct ✓
-- Captions land in the lower third, top half of the frame untouched ✓
-- Crop offsets even, in bounds, timestamps strictly increasing ✓
-- Crop holds while the subject is still and follows when they move ✓
-- No faces falls back to a centred crop ✓
-- A missing font raises `MissingFontError` instead of rendering blank ✓
+Interactive docs at `/docs`. Set `REELS_API_KEY` and every `/api` route needs
+an `X-API-Key` header — that is the lock you put on a single-tenant box before
+it is on the open internet, not user accounts.
 
-Beyond the smoke test, on real footage:
+Configuration is environment-driven; see `.env.example` for the full list.
 
-- **Face tracking**, against a 1920x1080 clip of a real face crossing the
-  frame: 32/32 samples detected, crop plan tracked 0.18 → 0.77 of frame
-  width, holding at both ends.
-- **`run.py` end to end** with that clip: 1080x1920 H.264/AAC out, captions
-  burned in, thumbnail and `clips.json` written. The subject stays framed
-  from first frame to last.
-- **`transcribe.extract_audio`** produces 16 kHz mono PCM, and the mapping
-  into `Segment`/`Word` survives the shapes faster-whisper actually emits —
-  `words=None` on a segment, whitespace-only words — plus an exact
-  save/load roundtrip.
+## Tests
 
-Two steps could not be run here and are **not** verified: Whisper itself
-(model weights are fetched from Hugging Face, blocked by this network) and
-`score.find_clips` (needs an `ANTHROPIC_API_KEY`). Everything downstream of
-them was driven with a real transcript file and a stubbed clip list.
+```bash
+make test     # 178 unit tests — no ffmpeg, no models, no API key, ~1.5s
+make smoke    # 18 renderer checks — needs ffmpeg with libass, ~40s
+make check    # both, which is what CI runs
+```
+
+`smoke.py` does not just check that ffmpeg exits 0 — that is exactly the
+failure this pipeline is prone to. libass draws nothing when it cannot find a
+font and ffmpeg still succeeds, so it renders each clip twice, with and
+without the subtitle filter, and compares the two with ffmpeg's own `psnr`:
+
+- full frame must differ → captions were actually burned in
+- top half must be identical → captions sit clear of the TikTok/Reels chrome
+
+It runs on the standard library alone, so a broken dependency can never mask a
+renderer regression. It also covers ASS escaping, caption event timing, every
+style preset, the crop planner's hysteresis (faces injected, so no mediapipe),
+and that a silent source still produces a playable clip.
 
 ## The Arabic detail your competitors get wrong
 
@@ -126,6 +138,12 @@ exits 0. This exact failure happened during testing, so
 `captions.require_font()` checks the file is on disk before any encoding
 starts. `scripts/fetch_fonts.py` regenerates them from google/fonts.
 
+Transcript text is never trusted as markup. A single `{` from a transcript
+opens an ASS override block and swallows the rest of the caption line, so
+`captions.escape()` neutralises braces and backslashes before they reach an
+event. Out-of-order Whisper word timings are clamped too — libass stops
+rendering at the first negative-length event it sees.
+
 One more placement trap: ASS ignores `MarginV` for the middle alignments
 (`\an4`-`\an6`), so `\an5` plus a generous margin still lands the caption
 dead centre. Captions carry an explicit `\pos()` instead.
@@ -137,19 +155,44 @@ filter, EMA, then **lock** the crop and only move when the subject drifts past
 6% of frame width — easing across with smoothstep over 0.5s. The camera holds
 still during a shot and repositions on speaker changes, like a human operator.
 
+Sampling reads the clip forward once and drops the frames it does not need.
+The obvious implementation — `cap.set(POS_MSEC)` before every sample — makes
+OpenCV re-seek and re-decode from the preceding keyframe each time, which on a
+long-GOP H.264 file costs more than decoding the whole clip. Detection also
+runs on a downscaled copy: face position is normalised to frame width, so the
+answer is identical and the detector is several times faster.
+
+## What makes the output postable
+
+- **Loudness matched to what the platforms normalise to** (`I=-14 TP=-1.5`).
+  A clip that arrives quiet stays quiet next to everything else in the feed.
+- **A silent source still gets an audio track** — several platforms reject an
+  upload with no audio stream at all.
+- **`+faststart`**, so the file starts playing before it finishes downloading.
+- **One bad clip never kills the batch.** Each clip is rendered in isolation;
+  a failure is reported against that clip and the rest still ship.
+
+## Speed
+
+| Change | Effect |
+|---|---|
+| Sequential decode for face sampling | no re-seek per sample on long-GOP files |
+| Detection on a 640px copy | several times faster, same crop plan |
+| Parallel clip renders | `--workers`, auto-sized to half your cores |
+| Whisper model cached per process | a server pays the load cost once, not once a job |
+| Transcript cached per model+language | restyling a batch costs seconds |
+| `condition_on_previous_text=False` | faster, and stops the phrase-loop on noisy audio |
+
 ## What's not built yet
 
 - **Sports mode** — swap face detection for ball/action tracking in `reframe.py`
 - **Caption translation** — translate the ASS text layer, keep original audio
 - **B-roll / gameplay strip** — `vstack` a second source under the main frame
-- **Hook titles** — `captions.build_hook()` exists, not wired into `run.py`
 
-## Then the product layer
+## Then the rest of the product
 
-Once clip quality is good enough that you'd post the output unedited:
-
-1. **Worker** — this repo behind BullMQ + Redis on a GPU box. Not serverless;
-   ffmpeg and Whisper need real machines.
+1. **Scale out** — more of the compose service against shared storage, and
+   Postgres in place of SQLite. The schema ports unchanged.
 2. **Storage** — Cloudflare R2 (zero egress fees, which matters a lot for video)
 3. **Publishing** — YouTube Data API v3 (**1600 quota units per upload against a
    10,000/day default = 6 uploads/day** until you get an increase; apply early,
@@ -157,7 +200,6 @@ Once clip quality is good enough that you'd post the output unedited:
    Reels needs a Business account plus Facebook app review.
 4. **Scheduling** — delayed jobs *or* a cron sweep, never both without an atomic
    status transition, or you will double-post.
-5. **Dashboard** — the easy part. Build it last.
 
 ## Before you scale
 

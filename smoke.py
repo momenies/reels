@@ -54,6 +54,12 @@ def psnr(a: Path, b: Path, crop: str | None = None) -> float:
     return math.inf if m.group(1) == "inf" else float(m.group(1))
 
 
+def _secs(ts: str) -> float:
+    """ASS timestamps are H:MM:SS.cc."""
+    h, m, rest = ts.strip().split(":")
+    return int(h) * 3600 + int(m) * 60 + float(rest)
+
+
 def check(label: str, ok: bool, detail: str = "") -> bool:
     print(f"  {'PASS' if ok else 'FAIL'}  {label}{'  ' + detail if detail else ''}")
     return ok
@@ -158,6 +164,65 @@ def main() -> int:
         results.append(check("missing font raises instead of rendering blank", True))
     else:
         results.append(check("missing font raises instead of rendering blank", False))
+
+    # ASS is a markup format and transcript text is untrusted input: a stray
+    # brace would open an override block and eat the rest of the line.
+    print("\n[escaping]")
+    hostile = [W(0.0, 0.4, "{\\pos(0,0)}"), W(0.4, 0.8, "safe")]
+    ass = captions.build_ass(hostile, WORK / "esc.ass", fonts_dir=FONTS)
+    body = ass.read_text(encoding="utf-8").split("[Events]")[1]
+    results.append(check("brace in a word cannot open an override block",
+                         "{\\pos(0,0)}" not in body))
+    results.append(check("the word still renders", "safe" in body))
+
+    # Out-of-order word timings must not produce a negative-length event:
+    # libass stops rendering at the first one it sees.
+    backwards = [W(1.0, 0.2, "first"), W(0.5, 0.5, "second")]
+    ass = captions.build_ass(backwards, WORK / "back.ass", fonts_dir=FONTS)
+    spans = []
+    for line in ass.read_text(encoding="utf-8").splitlines():
+        if line.startswith("Dialogue:"):
+            _, start, end = line.split(",", 3)[:3]
+            spans.append((_secs(start), _secs(end)))
+    results.append(check("no zero or negative length caption events",
+                         all(e > s for s, e in spans), f"({len(spans)} events)"))
+
+    # Every preset has to name a font that is actually on disk.
+    print("\n[styles]")
+    ok = True
+    for name in sorted(captions.STYLES):
+        try:
+            captions.build_ass(words_en, WORK / f"s-{name}.ass", style=name, fonts_dir=FONTS)
+        except Exception as exc:
+            print(f"    {name}: {exc}")
+            ok = False
+    results.append(check("every caption preset renders", ok,
+                         f"({len(captions.STYLES)} presets)"))
+
+    # A source with no audio track still has to produce a playable clip:
+    # several platforms reject an upload with no audio stream at all.
+    print("\n[silent source]")
+    silent = WORK / "silent.mp4"
+    subprocess.run(
+        ["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi",
+         "-i", "testsrc2=size=640x360:rate=25:duration=3",
+         "-c:v", "libx264", "-pix_fmt", "yuv420p", str(silent)],
+        check=True,
+    )
+    sinfo = reframe.probe(silent)
+    results.append(check("probe reports the missing audio track", not sinfo.has_audio))
+    scrop, splan = reframe.static_plan(sinfo)
+    out = render.render(silent, WORK / "silent-out.mp4", start=0, duration=2,
+                        crop_w=scrop, crop_x0=splan[0][1], sendcmd_file=None,
+                        ass_file=None, has_audio=False, gpu=False)
+    streams = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "stream=codec_type",
+         "-of", "csv=p=0", str(out)],
+        capture_output=True, text=True, check=True,
+    ).stdout.split()
+    results.append(check("a silent source still gets an audio track",
+                         "audio" in streams and "video" in streams,
+                         f"({', '.join(streams)})"))
 
     failed = results.count(False)
     print(f"\n{len(results) - failed}/{len(results)} checks passed")

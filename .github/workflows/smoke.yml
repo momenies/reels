@@ -1,4 +1,4 @@
-name: smoke
+name: ci
 
 on:
   push:
@@ -6,6 +6,29 @@ on:
   pull_request:
 
 jobs:
+  # Pure logic: parsing, clamping, dedupe, path safety, job transitions.
+  # No ffmpeg, no models, no API key — so it fails fast and says why.
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install
+        run: pip install fastapi "uvicorn[standard]" python-multipart pytest httpx
+
+      - name: Compile
+        run: python -m compileall -q pipeline server smoke.py scripts tests
+
+      - name: Unit tests
+        run: python -m pytest tests/ -q
+
+  # The renderer is the thing under test; libass is what burns the captions
+  # in, so a build without it would pass by drawing nothing.
   smoke:
     runs-on: ubuntu-latest
     steps:
@@ -15,17 +38,12 @@ jobs:
         with:
           python-version: "3.11"
 
-      # The renderer is the thing under test; libass is what burns the
-      # captions in, so a build without it would pass by drawing nothing.
       - name: Install ffmpeg
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
           ffmpeg -hide_banner -filters | grep -q ' ass ' \
             || { echo "ffmpeg has no ass filter (built without libass)"; exit 1; }
-
-      - name: Compile
-        run: python -m compileall -q pipeline smoke.py scripts
 
       # No pip install: smoke.py deliberately runs on the standard library
       # alone, so a broken dependency can never mask a renderer regression.

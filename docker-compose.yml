@@ -1,0 +1,31 @@
+# Single-box deployment: one API process, one worker, one volume.
+#
+# Scaling out means running more of this service against shared storage and
+# swapping the SQLite job store for Postgres — the schema ports unchanged.
+services:
+  studio:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      # Required — clip selection is the only stage that calls out.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY in .env}
+      # Concurrent jobs. Each one is a whole video; more than a couple on a
+      # CPU box just makes every customer wait longer.
+      REELS_JOB_WORKERS: ${REELS_JOB_WORKERS:-1}
+      REELS_WHISPER_MODEL: ${REELS_WHISPER_MODEL:-small}
+      REELS_MAX_UPLOAD_MB: ${REELS_MAX_UPLOAD_MB:-2048}
+      REELS_RETENTION_HOURS: ${REELS_RETENTION_HOURS:-72}
+      # Set this before putting the box on a public address.
+      REELS_API_KEY: ${REELS_API_KEY:-}
+    volumes:
+      - reels-data:/data
+    restart: unless-stopped
+    # Video encoding will happily consume every core on the machine.
+    deploy:
+      resources:
+        limits:
+          cpus: ${REELS_CPUS:-4}
+
+volumes:
+  reels-data:
