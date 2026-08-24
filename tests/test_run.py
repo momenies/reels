@@ -52,3 +52,36 @@ class TestOptions:
 
     def test_gpu_none_means_take_the_environment_default(self):
         assert Options(gpu=None).resolved()["gpu"] in (True, False)
+
+
+class TestProcessSignature:
+    """`web/`'s standalone tool calls process() with keyword arguments.
+
+    Two entry points into the pipeline is already one more than ideal; two
+    that accept different arguments is how they start producing different
+    clips from the same video.
+    """
+
+    def test_keyword_form_builds_the_same_options(self):
+        from pipeline.run import Options
+
+        assert Options(lang="ar", clips=3).lang == "ar"
+
+    def test_unknown_keyword_is_rejected_loudly(self):
+        from pipeline.run import process
+
+        with pytest.raises(TypeError, match="unexpected keyword"):
+            process("x.mp4", "out", nonsense=1)
+
+    def test_mixing_both_forms_is_rejected(self):
+        from pipeline.run import Options, process
+
+        with pytest.raises(TypeError, match="not both"):
+            process("x.mp4", "out", Options(), lang="ar")
+
+    def test_the_tool_call_site_still_type_checks(self):
+        """Exactly the call web/app.py makes, minus running it."""
+        from pipeline.run import Options
+
+        opts = Options(lang=None, clips=5, min_score=60, model="", faces=True)
+        assert opts.resolved()["model"]        # empty model falls back

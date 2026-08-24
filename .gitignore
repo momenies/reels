@@ -4,7 +4,8 @@ __pycache__/
 .env
 out/
 smoke/
-data/
+data/          # server/ job store and media
+jobs/          # web/ standalone tool
 *.mp4
 *.wav
 *.jpg

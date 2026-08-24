@@ -214,3 +214,62 @@ class TestUploadRace:
 
         (job_dir / "source.mp4").write_bytes(b"a whole video")
         assert _find_source(job_dir).name == "source.mp4"
+
+
+class TestUrlIngest:
+    """A link is an alternative to an upload, not a second endpoint."""
+
+    def test_a_link_and_a_file_together_is_rejected(self, client):
+        r = client.post(
+            "/api/jobs",
+            files={"file": ("a.mp4", b"\x00" * 1024, "video/mp4")},
+            data={"url": "https://example.com/v"},
+        )
+        assert r.status_code == 400
+        assert "not both" in r.json()["detail"]
+
+    def test_neither_is_rejected(self, client):
+        assert client.post("/api/jobs", data={"clips": "2"}).status_code == 400
+
+    def test_a_non_link_is_rejected(self, client):
+        r = client.post("/api/jobs", data={"url": "just some words"})
+        assert r.status_code == 400
+
+    def test_a_link_needs_yt_dlp_and_says_so(self, client, monkeypatch):
+        from pipeline import fetch
+
+        monkeypatch.setattr(fetch, "available", lambda: False)
+        r = client.post("/api/jobs", data={"url": "https://example.com/v"})
+        assert r.status_code == 503 and "yt-dlp" in r.json()["detail"]
+
+    def test_a_link_queues_a_job_when_yt_dlp_is_present(self, client, monkeypatch):
+        from pipeline import fetch
+
+        monkeypatch.setattr(fetch, "available", lambda: True)
+        r = client.post(
+            "/api/jobs", data={"url": "https://example.com/v", "clips": "2"}
+        )
+        assert r.status_code == 201
+        assert r.json()["options"]["url"] == "https://example.com/v"
+
+    def test_health_reports_whether_links_can_be_fetched(self, client):
+        assert "url_ingest" in client.get("/api/health").json()
+
+
+class TestWorkerFetch:
+    def test_a_failed_fetch_reports_the_reason_not_a_traceback(self, store, tmp_path, monkeypatch):
+        from pipeline.fetch import FetchError
+        from server import worker as w
+
+        job = store.create("https://example.com/v", 0, {"url": "https://example.com/v"})
+        store.claim_next()
+        (tmp_path / "jobs" / job.id).mkdir(parents=True)
+
+        def boom(url, dest, **kw):
+            raise FetchError("that video is private", kind="PRIVATE")
+
+        monkeypatch.setattr(w, "download", boom)
+        w.Worker(store, tmp_path / "jobs").run_job(job.id)
+
+        got = store.get(job.id)
+        assert got.status == "error" and got.error == "that video is private"

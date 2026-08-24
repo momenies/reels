@@ -118,10 +118,27 @@ def process(
     options: Options | None = None,
     *,
     on_progress: Progress | None = None,
+    **overrides,
 ) -> Result:
-    """Run the whole pipeline. Returns what was produced, including failures."""
+    """Run the whole pipeline. Returns what was produced, including failures.
+
+    ``options`` is the normal way in. The keyword form
+    (``process(src, out, lang="ar", clips=5)``) is kept because the standalone
+    tool in ``web/`` calls it that way, and a second entry point that drifts
+    from this one is how the two stop producing the same clips.
+    """
     started = time.monotonic()
-    options = options or Options()
+    if options is None:
+        known = {f for f in Options.__dataclass_fields__}
+        unknown = set(overrides) - known
+        if unknown:
+            raise TypeError(
+                f"process() got unexpected keyword argument(s): "
+                f"{', '.join(sorted(unknown))}"
+            )
+        options = Options(**overrides)
+    elif overrides:
+        raise TypeError("pass either an Options object or keyword arguments, not both")
     on_progress = on_progress or _noop
     opts = options.resolved()
 

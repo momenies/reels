@@ -29,9 +29,9 @@ from fastapi.responses import (
 )
 from fastapi.staticfiles import StaticFiles
 
-from pipeline import __version__
+from pipeline import __version__, fetch
 from pipeline.captions import STYLES
-from pipeline.config import ROOT, settings
+from pipeline.config import settings
 from pipeline.log import get, setup
 
 from .store import ACTIVE, CANCELED, QUEUED, UPLOADING, Store
@@ -39,7 +39,10 @@ from .worker import Worker, sweep
 
 log = get("api")
 
-WEB_DIR = ROOT / "web"
+#: The studio's own assets. Deliberately under server/ rather than web/:
+#: web/ is the standalone local tool's Python package, and mounting a package
+#: directory as StaticFiles would serve its source.
+WEB_DIR = Path(__file__).resolve().parent / "static"
 CHUNK = 4 * 1024 * 1024
 
 #: Containers ffmpeg reads reliably and browsers actually produce.
@@ -132,6 +135,7 @@ def health() -> dict:
         "ffmpeg": ok,
         "queue": store().counts() if "store" in state else {},
         "auth": bool(settings().api_key),
+        "url_ingest": fetch.available(),
     }
 
 
@@ -160,7 +164,8 @@ def _css(ass_colour: str) -> str:
 
 @app.post("/api/jobs", dependencies=[Depends(require_key)])
 async def create_job(
-    file: UploadFile = File(...),
+    file: UploadFile | None = File(None),
+    url: str = Form(""),
     lang: str = Form(""),
     clips: int = Form(5),
     min_score: int = Form(60),
@@ -169,6 +174,18 @@ async def create_job(
     hook: bool = Form(False),
     model: str = Form(""),
 ) -> JSONResponse:
+    url = (url or "").strip()
+    if url and file is not None and file.filename:
+        raise HTTPException(
+            status_code=400, detail="send either a file or a url, not both"
+        )
+    if url:
+        return await _create_url_job(
+            url, lang, clips, min_score, style, faces, hook, model
+        )
+    if file is None or not file.filename:
+        raise HTTPException(status_code=400, detail="no file and no url was sent")
+
     name = Path(file.filename or "upload.mp4").name
     suffix = Path(name).suffix.lower()
     if suffix not in ALLOWED_SUFFIXES:
@@ -237,6 +254,37 @@ async def create_job(
     log.info("job %s queued — %s (%.1f MB)", job.id, name, written / 1e6)
     fresh = store().get(job.id)
     return JSONResponse(fresh.to_dict(), status_code=201)
+
+
+async def _create_url_job(
+    url: str, lang: str, clips: int, min_score: int, style: str,
+    faces: bool, hook: bool, model: str,
+):
+    """Queue a job from a link instead of an upload.
+
+    The download runs on the worker, not here: a two-hour video takes minutes
+    to fetch, and holding the HTTP request open for it times out every proxy
+    in the path.
+    """
+    if not re.match(r"https?://", url, re.I):
+        raise HTTPException(status_code=400, detail="that does not look like a link")
+    if not fetch.available():
+        raise HTTPException(
+            status_code=503,
+            detail="yt-dlp is not installed on this server, so links cannot be "
+                   "fetched. Upload the file instead, or: pip install yt-dlp",
+        )
+    if style not in STYLES:
+        raise HTTPException(status_code=400, detail=f"unknown caption style {style!r}")
+
+    options = {
+        "lang": lang, "clips": clips, "min_score": min_score, "style": style,
+        "faces": faces, "hook": hook, "model": model, "url": url,
+    }
+    job = store().create(filename=url, size_bytes=0, options=options)
+    (jobs_dir() / job.id).mkdir(parents=True, exist_ok=True)
+    log.info("job %s queued from a link", job.id)
+    return JSONResponse(store().get(job.id).to_dict(), status_code=201)
 
 
 @app.get("/api/jobs", dependencies=[Depends(require_key)])

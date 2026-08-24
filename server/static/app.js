@@ -30,6 +30,7 @@
       "drop.browse": "Choose a file",
       "drop.types": "MP4 · MOV · MKV · WEBM · AVI · MP3 · WAV",
       "drop.change": "Change",
+      "drop.or": "or paste a link",
       "captions.head": "Caption style",
       "settings.head": "Settings",
       "settings.lang": "Spoken language",
@@ -73,7 +74,7 @@
       "toast.failed": "The job failed",
       "toast.deleted": "Job deleted",
       "toast.nothing": "No moment cleared the quality bar. Try lowering it.",
-      "err.pick": "Pick a video first.",
+      "err.pick": "Pick a video or paste a link first.",
       "err.upload": "The upload did not go through",
       "err.network": "Lost contact with the server — retrying",
       "confirm.delete": "Delete this job and its clips?",
@@ -89,6 +90,7 @@
       "drop.browse": "اختر ملفًا",
       "drop.types": "MP4 · MOV · MKV · WEBM · AVI · MP3 · WAV",
       "drop.change": "تغيير",
+      "drop.or": "أو الصق رابطًا",
       "captions.head": "نمط الكابشن",
       "settings.head": "الإعدادات",
       "settings.lang": "لغة الكلام",
@@ -132,7 +134,7 @@
       "toast.failed": "فشلت المهمة",
       "toast.deleted": "حُذفت المهمة",
       "toast.nothing": "لم تجتز أي لحظة حدّ الجودة. جرّب خفضه.",
-      "err.pick": "اختر فيديو أولًا.",
+      "err.pick": "اختر فيديو أو الصق رابطًا أولًا.",
       "err.upload": "لم يكتمل الرفع",
       "err.network": "انقطع الاتصال بالخادم — تجري إعادة المحاولة",
       "confirm.delete": "حذف هذه المهمة ومقاطعها؟",
@@ -152,6 +154,7 @@
     job: null,
     jobs: [],
     uploading: false,
+    urlIngest: false,
     uploadPct: 0,
   };
   // localStorage wins over the browser locale when it holds a real choice.
@@ -243,10 +246,16 @@
   /* ── rendering ─────────────────────────────────────────────────────── */
   function renderPicked() {
     const has = Boolean(state.file);
+    const link = $("#url") ? $("#url").value.trim() : "";
     $("#drop").classList.toggle("has-file", has);
     $("#drop-empty").hidden = has;
     $("#drop-picked").hidden = !has;
-    $("#submit").disabled = !has || state.uploading;
+    // A link and a file are alternatives; showing both invites sending both.
+    if ($("#url-row")) {
+      $("#url-row").hidden = has || !state.urlIngest;
+      $("#url-field").hidden = has || !state.urlIngest;
+    }
+    $("#submit").disabled = (!has && !link) || state.uploading;
     if (!has) return;
     $("#picked-name").textContent = state.file.name;
     $("#picked-facts").textContent = fmtBytes(state.file.size);
@@ -293,7 +302,7 @@
     $("#progress-fill").style.width = `${Math.max(2, pct * 100)}%`;
     $("#progress-msg").textContent = uploading
       ? `${t("uploading")} — ${Math.round(state.uploadPct * 100)}%`
-      : (job.message || "");
+      : statusMessage(job);
 
     const finished = job && (job.status === "done" || job.status === "error");
     $("#progress-bar").classList.toggle("bar--idle", Boolean(finished));
@@ -326,6 +335,20 @@
       box.appendChild(el("div", null, t("toast.nothing")));
       alert.appendChild(box);
     }
+  }
+
+  function statusMessage(job) {
+    // The worker writes progress messages in English. For the states the UI
+    // can describe itself, say it in the reader's language instead.
+    if (job.status === "done") {
+      return job.clips.length
+        ? `${job.clips.length} ${t("toast.ready")}`
+        : t("toast.nothing");
+    }
+    if (job.status === "error") return t("toast.failed");
+    if (job.status === "queued") return t("status.queued");
+    if (job.status === "uploading") return t("status.uploading");
+    return job.message || "";
   }
 
   function clipUrl(job, name) { return `/api/jobs/${job.id}/files/${encodeURIComponent(name)}`; }
@@ -396,7 +419,9 @@
       const body = el("div", "clip__body");
       body.appendChild(el("div", "clip__reason", clip.reason || ""));
       const foot = el("div", "clip__foot");
-      foot.appendChild(el("span", "clip__time", `${fmtDur(clip.start)} → ${fmtDur(clip.end)}`));
+      const time = el("span", "clip__time", `${fmtDur(clip.start)} → ${fmtDur(clip.end)}`);
+      time.dir = "ltr";   // an RTL line would otherwise reorder it to end → start
+      foot.appendChild(time);
 
       const dl = el("a", "btn btn--sm");
       dl.href = clipUrl(job, clip.file);
@@ -481,7 +506,9 @@
     stats.textContent = "";
     stats.appendChild(el("span", "pill pill--accent", `${clip.score}/100`));
     stats.appendChild(el("span", "pill", `${Math.round(clip.duration)}s`));
-    stats.appendChild(el("span", "pill", `${fmtDur(clip.start)} → ${fmtDur(clip.end)}`));
+    const range = el("span", "pill", `${fmtDur(clip.start)} → ${fmtDur(clip.end)}`);
+    range.dir = "ltr";
+    stats.appendChild(range);
     if (clip.bytes) stats.appendChild(el("span", "pill", fmtBytes(clip.bytes)));
     const dl = $("#lightbox-download");
     dl.href = clipUrl(job, clip.file);
@@ -574,10 +601,12 @@
   }
 
   function upload() {
-    if (!state.file) { toast(t("err.pick"), "error"); return; }
+    const link = $("#url") ? $("#url").value.trim() : "";
+    if (!state.file && !link) { toast(t("err.pick"), "error"); return; }
 
     const form = new FormData();
-    form.append("file", state.file);
+    if (state.file) form.append("file", state.file);
+    else form.append("url", link);
     form.append("lang", $("#lang").value);
     form.append("clips", $("#clips").value);
     form.append("min_score", $("#min-score").value);
@@ -602,6 +631,7 @@
 
     xhr.addEventListener("load", async () => {
       state.uploading = false;
+      if ($("#url")) $("#url").value = "";
       if (xhr.status === 201) {
         const job = JSON.parse(xhr.responseText);
         state.job = job;
@@ -671,6 +701,7 @@
     window.addEventListener("drop", (e) => e.preventDefault());
 
     $("#submit").addEventListener("click", upload);
+    if ($("#url")) $("#url").addEventListener("input", renderPicked);
 
     $("#clips").addEventListener("input", (e) => { $("#clips-value").textContent = e.target.value; });
     $("#min-score").addEventListener("input", (e) => { $("#min-score-value").textContent = e.target.value; });
@@ -712,6 +743,7 @@
 
     try {
       const health = await api("/api/health");
+      state.urlIngest = Boolean(health.url_ingest);
       if (!health.ffmpeg) {
         $("#health-dot").style.background = "var(--danger)";
         $("#health-text").textContent = "ffmpeg missing";

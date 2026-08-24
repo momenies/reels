@@ -382,6 +382,17 @@ a:hover { text-decoration: underline; }
 .drop__types { margin-top: 14px; font-size: 11.5px; color: var(--text-faint); }
 .drop input[type="file"] { display: none; }
 
+.drop__or {
+  display: flex; align-items: center; gap: 12px;
+  margin: 20px auto 12px; max-width: 420px;
+  font-size: 12px; color: var(--text-faint); text-transform: uppercase;
+  letter-spacing: .06em; font-weight: 600;
+}
+.drop__or-line { flex: 1; height: 1px; background: var(--border); }
+.url-field { max-width: 420px; margin-inline: auto; }
+.url-field .input { text-align: center; }
+[dir="rtl"] .url-field .input { direction: ltr; }
+
 .picked { display: flex; align-items: center; gap: 14px; }
 .picked__thumb {
   width: 74px; height: 74px; border-radius: 12px; flex: none;
@@ -558,7 +569,7 @@ a:hover { text-decoration: underline; }
 }
 .clip__foot { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
 .clip__time { font-family: var(--mono); font-size: 11px; color: var(--text-faint);
-              margin-inline-end: auto; }
+              margin-inline-end: auto; unicode-bidi: isolate; }
 
 /* ── job history ───────────────────────────────────────────────────────── */
 .jobs { display: flex; flex-direction: column; gap: 8px; }

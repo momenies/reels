@@ -19,6 +19,7 @@ import time
 from pathlib import Path
 
 from pipeline.captions import DEFAULT_STYLE
+from pipeline.fetch import FetchError, download
 from pipeline.log import get
 from pipeline.reframe import ProbeError
 from pipeline.run import Options, process
@@ -136,6 +137,29 @@ class Worker:
             return
         job_dir = self.jobs_dir / job_id
         source = _find_source(job_dir)
+
+        url = (job.options or {}).get("url") or ""
+        if source is None and url:
+            # Fetching happens here rather than in the request handler: a
+            # two-hour video takes minutes to pull, and no proxy holds an
+            # HTTP request open that long.
+            self.store.update(
+                job_id, stage="probe", progress=0.01, message="fetching the link"
+            )
+            try:
+                source = download(url, job_dir)
+            except FetchError as exc:
+                log.warning("job %s could not fetch %s: %s", job_id, url, exc)
+                self.store.finish(job_id, ERROR, message="failed", error=str(exc))
+                return
+            except Exception as exc:
+                log.exception("job %s failed while fetching", job_id)
+                self.store.finish(
+                    job_id, ERROR, message="failed", error=f"could not fetch the link: {exc}"
+                )
+                return
+            self.store.update(job_id, filename=source.name, size_bytes=source.stat().st_size)
+
         if source is None:
             self.store.finish(
                 job_id, ERROR, message="failed",

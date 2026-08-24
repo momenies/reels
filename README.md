@@ -25,6 +25,7 @@ video ──▶ ffmpeg ──▶ faster-whisper ──▶ Claude ──▶ Media
 | `reframe.py` | face track → smoothed crop plan | CPU seconds |
 | `captions.py` | word timings → styled ASS subtitles | free |
 | `render.py` | cut + crop + burn + encode | GPU/CPU seconds |
+| `fetch.py` | a link → a local file (yt-dlp) | bandwidth |
 
 ## Quick start
 
@@ -44,6 +45,18 @@ make serve                         # http://localhost:8000
 Requires `ffmpeg` and `ffprobe` on PATH, built with `--enable-libass`
 (check: `ffmpeg -filters | grep ass`).
 
+## Two ways in
+
+| | `server/` — the product | `web/` — the local tool |
+|---|---|---|
+| Run | `make serve` | `python -m web.app` |
+| Queue | SQLite, survives a restart | in-memory, single worker |
+| Progress | SSE + polling fallback | captured pipeline log |
+| Exposure | optional `REELS_API_KEY` | binds to 127.0.0.1, trusts the keyboard |
+
+Both call the same `pipeline.run.process`. Keep the local tool for quick
+one-offs on your own machine; deploy `server/`.
+
 ## The studio
 
 Drag a video in, pick a caption style, watch it work, download the clips.
@@ -58,6 +71,10 @@ Drag a video in, pick a caption style, watch it work, download the clips.
 - **Job history** that survives a restart: interrupted jobs are requeued, and
   the cached transcript means a rerun costs seconds.
 - Dark and light, and it works on a phone.
+- **Paste a link instead of uploading.** Needs `yt-dlp` on PATH; the download
+  runs on the worker, because no proxy holds an HTTP request open for the
+  minutes a two-hour video takes. `GET /api/health` reports whether it is
+  available. Set `YOUTUBE_API_KEY` for title/channel metadata.
 
 ## CLI
 
@@ -87,7 +104,7 @@ so re-running to tweak caption styling costs seconds, not minutes.
 
 | Route | Does |
 |---|---|
-| `POST /api/jobs` | multipart upload + options → queued job |
+| `POST /api/jobs` | multipart upload **or** a `url` field, + options → queued job |
 | `GET /api/jobs/{id}` | status, progress, clips |
 | `GET /api/jobs/{id}/events` | SSE progress stream |
 | `GET /api/jobs/{id}/files/{name}` | a clip or thumbnail (supports Range) |
@@ -171,6 +188,10 @@ answer is identical and the detector is several times faster.
 - **`+faststart`**, so the file starts playing before it finishes downloading.
 - **One bad clip never kills the batch.** Each clip is rendered in isolation;
   a failure is reported against that clip and the rest still ship.
+- **A frameless render is caught where the reason is still obvious.** ffmpeg
+  exits 0 having written a valid container with no frames in it — asked to cut
+  past the end of the source, for one — so `render()` checks and raises
+  `RenderedNothingError` rather than failing three lines later in `thumbnail()`.
 
 ## Speed
 

@@ -33,6 +33,10 @@ class RenderError(RuntimeError):
     """ffmpeg refused to produce the clip."""
 
 
+class RenderedNothingError(RenderError):
+    """ffmpeg exited 0 but produced a clip with no frames."""
+
+
 def build_filter_chain(
     *,
     crop_w: int,
@@ -139,7 +143,26 @@ def render(
     _run(cmd, duration=duration, on_progress=on_progress)
     if not out.exists() or out.stat().st_size == 0:
         raise RenderError(f"ffmpeg produced no output for {out.name}")
+
+    # ffmpeg exits 0 having written a valid container with no frames in it —
+    # asked to cut past the end of the source, for one. Catch it here, where
+    # the reason is still obvious, rather than in thumbnail() three lines on.
+    if not _has_frames(out):
+        raise RenderedNothingError(
+            f"{out.name} has no video frames: cut {start:.2f}s->{start + duration:.2f}s "
+            f"is outside {Path(src).name}"
+        )
     return out
+
+
+def _has_frames(video: Path) -> bool:
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0",
+         "-count_packets", "-show_entries", "stream=nb_read_packets",
+         "-of", "default=nw=1:nk=1", str(video)],
+        capture_output=True, text=True,
+    )
+    return probe.returncode == 0 and probe.stdout.strip() not in ("", "0", "N/A")
 
 
 def _run(cmd: list[str], *, duration: float, on_progress) -> None:
