@@ -43,11 +43,23 @@ class Settings:
     """Process-wide knobs. Instantiate once via :func:`settings`."""
 
     # --- LLM ---------------------------------------------------------------
+    #: Which backend picks the clips. Blank means "whichever key is present",
+    #: so a clone with only one of them configured needs no extra setting.
+    llm_provider: str = field(
+        default_factory=lambda: os.environ.get("REELS_LLM_PROVIDER", "").strip().lower()
+    )
     anthropic_api_key: str = field(
         default_factory=lambda: os.environ.get("ANTHROPIC_API_KEY", "")
     )
     model: str = field(
         default_factory=lambda: os.environ.get("REELS_MODEL", "claude-sonnet-5")
+    )
+    gemini_api_key: str = field(
+        default_factory=lambda: os.environ.get("GEMINI_API_KEY", "")
+        or os.environ.get("GOOGLE_API_KEY", "")
+    )
+    gemini_model: str = field(
+        default_factory=lambda: os.environ.get("REELS_GEMINI_MODEL", "gemini-3.6-flash")
     )
     llm_max_retries: int = field(default_factory=lambda: _int("REELS_LLM_RETRIES", 3))
 
@@ -85,6 +97,25 @@ class Settings:
     retention_hours: int = field(
         default_factory=lambda: _int("REELS_RETENTION_HOURS", 72)
     )
+
+    def resolve_provider(self) -> str:
+        """Which backend to use, and why.
+
+        An explicit setting always wins. Otherwise the key that exists
+        decides: a clone with only GEMINI_API_KEY should just work, and so
+        should one with only ANTHROPIC_API_KEY. With both, Anthropic stays the
+        default so an existing deployment does not silently change model when
+        someone adds a Google key for the YouTube metadata.
+        """
+        if self.llm_provider in ("anthropic", "claude"):
+            return "anthropic"
+        if self.llm_provider in ("gemini", "google"):
+            return "gemini"
+        if self.anthropic_api_key:
+            return "anthropic"
+        if self.gemini_api_key:
+            return "gemini"
+        return "anthropic"     # nothing configured: fail with Anthropic's message
 
     def whisper_compute_type(self) -> str:
         """int8 on CPU, float16 on CUDA — unless told otherwise."""

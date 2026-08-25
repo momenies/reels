@@ -29,6 +29,7 @@ import re
 import time
 from dataclasses import dataclass, field
 
+from . import gemini
 from .config import settings
 from .log import get
 from .transcribe import Segment, Word
@@ -231,14 +232,15 @@ def _dedupe(clips: list[Clip]) -> list[Clip]:
     return kept
 
 
-def _client():
+def _anthropic_caller():
+    """A ``(prompt) -> text`` callable backed by Claude."""
     cfg = settings()
     key = cfg.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY", "")
     if not key:
         raise ScoringError(
             "ANTHROPIC_API_KEY is not set. Clip selection is the one step that "
-            "needs it — copy .env.example to .env and add your key from "
-            "https://console.anthropic.com/"
+            "needs a model — copy .env.example to .env and add a key from "
+            "https://console.anthropic.com/, or set GEMINI_API_KEY instead."
         )
     try:
         from anthropic import Anthropic
@@ -246,21 +248,58 @@ def _client():
         raise ScoringError(
             "the 'anthropic' package is not installed: pip install -r requirements.txt"
         ) from exc
-    return Anthropic(api_key=key)
+
+    client = Anthropic(api_key=key)
+
+    def call(prompt: str) -> str:
+        resp = client.messages.create(
+            model=cfg.model,
+            max_tokens=4000,
+            system=SYSTEM,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return "".join(b.text for b in resp.content if b.type == "text").strip()
+
+    return call, cfg.model
 
 
-def _ask(client, prompt: str) -> list[dict]:
+def _gemini_caller():
+    """A ``(prompt) -> text`` callable backed by Gemini."""
+    cfg = settings()
+    try:
+        gemini.api_key(cfg.gemini_api_key or None)
+    except gemini.GeminiError as exc:
+        raise ScoringError(str(exc)) from None
+
+    def call(prompt: str) -> str:
+        return gemini.generate(
+            SYSTEM, prompt, model=cfg.gemini_model, key=cfg.gemini_api_key or None
+        )
+
+    return call, cfg.gemini_model
+
+
+def _caller():
+    """Whichever backend is configured, behind one signature.
+
+    Only the request differs between providers. Windowing, JSON recovery,
+    retries, snapping and dedupe are the parts that took work to get right,
+    and they are worth exactly as much on one backend as the other — so they
+    live above this line, not inside it.
+    """
+    provider = settings().resolve_provider()
+    call, model = _gemini_caller() if provider == "gemini" else _anthropic_caller()
+    log.info("clip selection via %s (%s)", provider, model)
+    return call
+
+
+def _ask(call, prompt: str) -> list[dict]:
     """One scoring call, retried on the transient failures that do happen."""
     cfg = settings()
     last: Exception | None = None
     for attempt in range(cfg.llm_max_retries):
         try:
-            resp = client.messages.create(
-                model=cfg.model,
-                max_tokens=4000,
-                system=SYSTEM,
-                messages=[{"role": "user", "content": prompt}],
-            )
+            text = call(prompt)
         except Exception as exc:  # overloaded, rate limited, connection reset
             last = exc
             if attempt == cfg.llm_max_retries - 1:
@@ -270,7 +309,6 @@ def _ask(client, prompt: str) -> list[dict]:
             time.sleep(delay)
             continue
 
-        text = "".join(b.text for b in resp.content if b.type == "text").strip()
         raw = _extract_json_array(text)
         if raw is None:
             last = ValueError("model did not return a JSON array")
@@ -295,7 +333,7 @@ def find_clips(
         log.warning("empty transcript — nothing to score")
         return []
 
-    client = _client()
+    call = _caller()
     candidates: list[Clip] = []
     windows = _windows(segments)
 
@@ -306,7 +344,7 @@ def find_clips(
             f"Find up to {max_clips} clips in this transcript.\n\n"
             f"{_transcript_text(window)}"
         )
-        for raw in _ask(client, prompt):
+        for raw in _ask(call, prompt):
             clip = _parse_clip(raw)
             if clip is not None:
                 candidates.append(clip)

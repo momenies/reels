@@ -4,6 +4,8 @@ the same moment five times."""
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from pipeline import score
@@ -156,3 +158,87 @@ class TestFindClips:
         monkeypatch.setattr(score.settings(), "anthropic_api_key", "", raising=False)
         with pytest.raises(score.ScoringError, match="ANTHROPIC_API_KEY"):
             score.find_clips(segments)
+
+
+class TestProviderDispatch:
+    """Either backend, one code path above the call.
+
+    The windowing, JSON recovery, retries, snapping and dedupe are the parts
+    that took work to get right. They must not fork per provider.
+    """
+
+    def _settings(self, monkeypatch, **env):
+        import os
+
+        for key in ("REELS_LLM_PROVIDER", "ANTHROPIC_API_KEY",
+                    "GEMINI_API_KEY", "GOOGLE_API_KEY"):
+            monkeypatch.delenv(key, raising=False)
+        for key, value in env.items():
+            monkeypatch.setenv(key, value)
+        from pipeline.config import settings
+
+        return settings(refresh=True)
+
+    def test_gemini_key_alone_selects_gemini(self, monkeypatch):
+        assert self._settings(monkeypatch, GEMINI_API_KEY="g").resolve_provider() == "gemini"
+
+    def test_anthropic_key_alone_selects_anthropic(self, monkeypatch):
+        cfg = self._settings(monkeypatch, ANTHROPIC_API_KEY="a")
+        assert cfg.resolve_provider() == "anthropic"
+
+    def test_both_keys_keeps_anthropic_so_deployments_do_not_shift(self, monkeypatch):
+        cfg = self._settings(monkeypatch, ANTHROPIC_API_KEY="a", GEMINI_API_KEY="g")
+        assert cfg.resolve_provider() == "anthropic"
+
+    def test_an_explicit_setting_overrides_the_keys(self, monkeypatch):
+        cfg = self._settings(
+            monkeypatch, ANTHROPIC_API_KEY="a", GEMINI_API_KEY="g",
+            REELS_LLM_PROVIDER="gemini",
+        )
+        assert cfg.resolve_provider() == "gemini"
+
+    def test_google_api_key_counts_as_a_gemini_key(self, monkeypatch):
+        assert self._settings(monkeypatch, GOOGLE_API_KEY="g").resolve_provider() == "gemini"
+
+    def test_no_key_at_all_still_names_a_way_forward(self, monkeypatch, segments):
+        self._settings(monkeypatch)
+        with pytest.raises(score.ScoringError, match="GEMINI_API_KEY"):
+            score.find_clips(segments)
+
+    def test_gemini_path_runs_the_shared_post_processing(self, monkeypatch, segments):
+        """A Gemini reply goes through dedupe, snapping and the duration filter."""
+        self._settings(monkeypatch, GEMINI_API_KEY="g")
+        from pipeline import gemini
+
+        # two overlapping candidates plus one too short to survive
+        monkeypatch.setattr(gemini, "generate", lambda *a, **k: json.dumps([
+            {"start": 0.5, "end": 30.0, "title": "lower", "score": 70},
+            {"start": 1.0, "end": 31.0, "title": "higher", "score": 95},
+            {"start": 40.0, "end": 42.0, "title": "too short", "score": 99},
+        ]))
+        clips = score.find_clips(segments, max_clips=5, min_score=50)
+        assert [c.title for c in clips] == ["higher"]
+
+    def test_a_gemini_failure_is_retried_then_reported(self, monkeypatch, segments):
+        self._settings(monkeypatch, GEMINI_API_KEY="g", REELS_LLM_RETRIES="2")
+        from pipeline import gemini
+
+        calls = []
+
+        def boom(*a, **k):
+            calls.append(1)
+            raise gemini.GeminiError("overloaded")
+
+        monkeypatch.setattr(gemini, "generate", boom)
+        monkeypatch.setattr(score.time, "sleep", lambda s: None)
+        with pytest.raises(score.ScoringError, match="overloaded"):
+            score.find_clips(segments)
+        assert len(calls) == 2
+
+    def test_fenced_output_is_recovered_on_either_backend(self, monkeypatch, segments):
+        self._settings(monkeypatch, GEMINI_API_KEY="g")
+        from pipeline import gemini
+
+        monkeypatch.setattr(gemini, "generate", lambda *a, **k:
+                            '```json\n[{"start":0,"end":30,"title":"x","score":80}]\n```')
+        assert len(score.find_clips(segments, min_score=50)) == 1

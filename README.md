@@ -22,6 +22,7 @@ video ──▶ ffmpeg ──▶ faster-whisper ──▶ Claude ──▶ Media
 |---|---|---|
 | `transcribe.py` | 16 kHz audio → word-level transcript | GPU seconds |
 | `score.py` | transcript → ranked clip candidates | LLM tokens |
+| `gemini.py` | Gemini backend for `score.py` (stdlib only) | LLM tokens |
 | `reframe.py` | face track → smoothed crop plan | CPU seconds |
 | `captions.py` | word timings → styled ASS subtitles | free |
 | `render.py` | cut + crop + burn + encode | GPU/CPU seconds |
@@ -38,7 +39,7 @@ Then open <http://localhost:8000>. Or without Docker:
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env               # add your ANTHROPIC_API_KEY
+cp .env.example .env               # add ANTHROPIC_API_KEY or GEMINI_API_KEY
 make serve                         # http://localhost:8000
 ```
 
@@ -122,8 +123,8 @@ Configuration is environment-driven; see `.env.example` for the full list.
 ## Tests
 
 ```bash
-make test     # 178 unit tests — no ffmpeg, no models, no API key, ~1.5s
-make smoke    # 18 renderer checks — needs ffmpeg with libass, ~40s
+make test     # 224 unit tests — no ffmpeg, no models, no API key, ~1.5s
+make smoke    # 19 renderer checks — needs ffmpeg with libass, ~40s
 make check    # both, which is what CI runs
 ```
 
@@ -138,7 +139,49 @@ without the subtitle filter, and compares the two with ffmpeg's own `psnr`:
 It runs on the standard library alone, so a broken dependency can never mask a
 renderer regression. It also covers ASS escaping, caption event timing, every
 style preset, the crop planner's hysteresis (faces injected, so no mediapipe),
-and that a silent source still produces a playable clip.
+a cut that falls past the end of the source, and that a silent source still
+produces a playable clip.
+
+### What has actually been run
+
+**Clip selection has been run for real** against Gemini, on English and Arabic
+transcripts shaped like a podcast — housekeeping, a hook with a payoff, then
+filler. It cut the hook-to-payoff span both times and left the filler alone:
+
+| | picked | of | the title it wrote |
+|---|---|---|---|
+| English | 18.0s → 68.5s | 105s | *Why 94% of people quit their jobs* |
+| Arabic | 21.0s → 69.5s | 98s | *لماذا أغلقت شركتي وهي تحقق مليون ريال؟* |
+
+**Whisper itself is still unverified.** Its weights come from Hugging Face and
+this environment cannot reach it, so every run here used a transcript rather
+than producing one. Everything downstream of transcription is exercised; the
+transcribe step wants one run on real audio before this goes to customers.
+
+## Picking the model that picks the clips
+
+Clip selection is the one stage that calls out, and it runs on either backend:
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-...     # Claude
+GEMINI_API_KEY=...               # Gemini  (or GOOGLE_API_KEY)
+REELS_LLM_PROVIDER=gemini        # only needed when both keys are present
+```
+
+Whichever key is set is the one used. With both, Anthropic stays the default
+so adding a Google key for YouTube metadata does not silently change which
+model picks your clips.
+
+Only the request differs between the two. Windowing a long transcript,
+recovering JSON from a chatty reply, retries, boundary snapping and overlap
+dedupe are the parts that took work to get right — they live above the
+provider call, not inside it, and are worth exactly as much on either backend.
+
+The Gemini path talks to the REST API through `urllib`, so it adds no
+dependency. Note that its models think before answering and the thinking
+tokens come out of the same budget as the answer: too small an output budget
+returns an empty candidate that reads exactly like a refusal, which is why
+`gemini.OUTPUT_TOKENS` is generous and `MAX_TOKENS` gets its own error message.
 
 ## The Arabic detail your competitors get wrong
 
