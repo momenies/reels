@@ -8,8 +8,15 @@ services:
     ports:
       - "8000:8000"
     environment:
-      # Required — clip selection is the only stage that calls out.
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY in .env}
+      # Clip selection is the only stage that calls out, and it takes either
+      # backend. Neither is required *here* — requiring one would refuse to
+      # start a perfectly valid Gemini-only deployment. The app raises a clear
+      # error naming both if it turns out neither is set.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      REELS_LLM_PROVIDER: ${REELS_LLM_PROVIDER:-}
+      # Optional: title/channel metadata for pasted YouTube links.
+      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
       # Concurrent jobs. Each one is a whole video; more than a couple on a
       # CPU box just makes every customer wait longer.
       REELS_JOB_WORKERS: ${REELS_JOB_WORKERS:-1}
