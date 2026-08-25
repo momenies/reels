@@ -287,3 +287,41 @@ class TestWorkerFetch:
 
         got = store.get(job.id)
         assert got.status == "error" and got.error == "that video is private"
+
+
+class TestComposeContract:
+    """docker-compose must not require a key the app no longer requires.
+
+    Hard-requiring ANTHROPIC_API_KEY refused to start a perfectly valid
+    Gemini-only deployment — the stack failed before the app could explain
+    itself.
+    """
+
+    def _compose(self):
+        from pathlib import Path
+
+        return (Path(__file__).resolve().parent.parent / "docker-compose.yml").read_text()
+
+    def test_neither_key_is_mandatory_at_startup(self):
+        body = self._compose()
+        assert "ANTHROPIC_API_KEY:?" not in body
+        assert "GEMINI_API_KEY:?" not in body
+
+    def test_both_backends_are_passed_through(self):
+        body = self._compose()
+        for var in ("ANTHROPIC_API_KEY", "GEMINI_API_KEY", "REELS_LLM_PROVIDER"):
+            assert var in body, var
+
+    def test_the_app_names_both_when_neither_is_set(self, monkeypatch):
+        from pipeline import score
+        from pipeline.config import settings
+        from pipeline.transcribe import Segment
+
+        for key in ("ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY",
+                    "REELS_LLM_PROVIDER"):
+            monkeypatch.delenv(key, raising=False)
+        settings(refresh=True)
+        with pytest.raises(score.ScoringError) as exc:
+            score.find_clips([Segment(0.0, 5.0, "x", [])])
+        assert "ANTHROPIC_API_KEY" in str(exc.value)
+        assert "GEMINI_API_KEY" in str(exc.value)
